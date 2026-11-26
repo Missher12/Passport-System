@@ -1,0 +1,6 @@
+{
+  "name": "萤火通行 · 活动证件与赠票管理系统",
+  "description": "企业级多活动证件登记、头像补充、现场加证、赠票发放与统一扫码核销管理平台，采用 Apple Liquid Glass 视觉体系与单层顶部导航架构。",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

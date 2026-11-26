@@ -1,0 +1,313 @@
+@import "tailwindcss";
+
+:root {
+  /* === Typography (Section 六: Unified Chinese & Circular-Zero Numeric Spec) === */
+  --font-ui:
+    -apple-system,
+    BlinkMacSystemFont,
+    "PingFang SC",
+    "Microsoft YaHei",
+    "Noto Sans SC",
+    "Source Han Sans SC",
+    Arial,
+    sans-serif;
+  --font-display:
+    -apple-system,
+    BlinkMacSystemFont,
+    "PingFang SC",
+    "Microsoft YaHei",
+    "Noto Sans SC",
+    Arial,
+    sans-serif;
+
+  /* === Color Palette (Apple Liquid Glass — Light Luminous Neutral + Precision Azure Accent) === */
+  --color-canvas-base: #f2f5fa;
+  --color-ink-primary: #111827;
+  --color-ink-secondary: #475569;
+  --color-ink-muted: #64748b;
+  --color-accent: #0071e3;
+  --color-accent-hover: #005bb8;
+  --color-accent-soft: rgba(0, 113, 227, 0.11);
+
+  /* Semantic Status Colors (Always paired with text/icon) */
+  --color-success: #15803d;
+  --color-success-bg: rgba(22, 163, 74, 0.12);
+  --color-warning: #b45309;
+  --color-warning-bg: rgba(217, 119, 6, 0.12);
+  --color-danger: #b91c1c;
+  --color-danger-bg: rgba(220, 38, 38, 0.12);
+  --color-info: #0369a1;
+  --color-info-bg: rgba(2, 132, 199, 0.12);
+
+  /* === Liquid Glass Material Tokens === */
+  --glass-bg-nav: rgba(255, 255, 255, 0.72);
+  --glass-bg-card: rgba(255, 255, 255, 0.68);
+  --glass-bg-elevated: rgba(255, 255, 255, 0.84);
+  --glass-bg-subtle: rgba(255, 255, 255, 0.46);
+  --glass-bg-input: rgba(255, 255, 255, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.78);
+  --glass-border-subtle: rgba(15, 23, 42, 0.08);
+  --glass-hairline: rgba(15, 23, 42, 0.06);
+
+  --glass-blur-sm: 14px;
+  --glass-blur-md: 24px;
+  --glass-blur-lg: 36px;
+
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.92), inset 0 -1px 0 rgba(255, 255, 255, 0.35);
+  --glass-shadow-sm: 0 4px 16px rgba(15, 23, 42, 0.05), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --glass-shadow-md: 0 12px 32px rgba(15, 23, 42, 0.07), 0 2px 6px rgba(15, 23, 42, 0.04);
+  --glass-shadow-lg: 0 24px 56px rgba(15, 23, 42, 0.12), 0 4px 12px rgba(15, 23, 42, 0.05);
+
+  /* === Radii & Spacing Scale === */
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-xl: 28px;
+  --radius-pill: 9999px;
+
+  /* === Control Sizing === */
+  --control-height-sm: 34px;
+  --control-height-md: 40px;
+  --control-height-lg: 46px;
+
+  /* === Motion Tokens === */
+  --ease-liquid: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 150ms;
+  --duration-base: 220ms;
+  --duration-slow: 360ms;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100dvh;
+  font-family: var(--font-ui);
+  color: var(--color-ink-primary);
+  background-color: var(--color-canvas-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "zero" 0;
+}
+
+body,
+button,
+input,
+textarea,
+select {
+  font-family: var(--font-ui);
+  font-feature-settings: "zero" 0;
+}
+
+/* === Mandatory Circular-Zero Numeric Classes (Section 六) === */
+.numeric-text,
+.table-number,
+.order-number,
+.phone-number,
+.stat-number,
+.date-number {
+  font-family: var(--font-ui);
+  font-variant-numeric: lining-nums tabular-nums;
+  font-feature-settings: "zero" 0;
+}
+
+/* === Atmospheric Luminous Backdrop for Liquid Glass Refraction === */
+.liquid-canvas {
+  background-color: var(--color-canvas-base);
+  background-image:
+    radial-gradient(62% 48% at 12% 4%, rgba(186, 224, 255, 0.56) 0%, rgba(186, 224, 255, 0) 68%),
+    radial-gradient(54% 46% at 88% 8%, rgba(212, 222, 255, 0.52) 0%, rgba(212, 222, 255, 0) 66%),
+    radial-gradient(58% 50% at 50% 96%, rgba(204, 238, 232, 0.38) 0%, rgba(204, 238, 232, 0) 70%);
+  background-attachment: fixed;
+}
+
+/* === Fluid Responsive Layout Shell (Chapter 5) === */
+.app-shell {
+  width: 100%;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  width: 100%;
+  padding: clamp(8px, 1.1vw, 14px) clamp(12px, 2vw, 28px) 6px;
+}
+
+.main-content {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  padding-top: clamp(12px, 1.8vw, 22px);
+  padding-bottom: clamp(32px, 4vw, 56px);
+}
+
+.page-container {
+  width: min(74%, 1320px);
+  margin-inline: auto;
+  min-width: 0;
+  padding-inline: clamp(14px, 1.5vw, 20px);
+}
+
+.page-container--wide {
+  width: 100%;
+  max-width: 1680px;
+  margin-inline: auto;
+  min-width: 0;
+  padding-inline: clamp(14px, 2.2vw, 32px);
+}
+
+@media (max-width: 1279px) {
+  .page-container {
+    width: 92%;
+  }
+}
+
+@media (max-width: 767px) {
+  .page-container,
+  .page-container--wide {
+    width: 100%;
+    padding-inline: 14px;
+  }
+}
+
+/* === Liquid Glass Surface Primitives === */
+.glass-nav-bar {
+  background: var(--glass-bg-nav);
+  backdrop-filter: blur(var(--glass-blur-lg)) saturate(190%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg)) saturate(190%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-highlight), var(--glass-shadow-md);
+  border-radius: var(--radius-xl);
+}
+
+.glass-surface {
+  background: var(--glass-bg-card);
+  backdrop-filter: blur(var(--glass-blur-md)) saturate(175%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-md)) saturate(175%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-highlight), var(--glass-shadow-sm);
+  border-radius: var(--radius-lg);
+}
+
+.glass-surface-elevated {
+  background: var(--glass-bg-elevated);
+  backdrop-filter: blur(var(--glass-blur-lg)) saturate(200%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg)) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.88);
+  box-shadow: var(--glass-highlight), var(--glass-shadow-lg);
+  border-radius: var(--radius-lg);
+}
+
+.glass-surface-subtle {
+  background: var(--glass-bg-subtle);
+  backdrop-filter: blur(var(--glass-blur-sm)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-sm)) saturate(150%);
+  border: 1px solid var(--glass-border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.glass-interactive {
+  transition:
+    transform var(--duration-fast) var(--ease-liquid),
+    box-shadow var(--duration-base) var(--ease-liquid),
+    background-color var(--duration-fast) var(--ease-liquid);
+}
+
+.glass-interactive:hover {
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: var(--glass-highlight), var(--glass-shadow-md);
+}
+
+.glass-interactive:active {
+  transform: scale(0.985);
+}
+
+.glass-input {
+  background: var(--glass-bg-input);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+  border-radius: var(--radius-sm);
+  transition:
+    border-color var(--duration-fast) var(--ease-liquid),
+    box-shadow var(--duration-fast) var(--ease-liquid),
+    background-color var(--duration-fast) var(--ease-liquid);
+}
+
+.glass-input:focus {
+  outline: none;
+  background: rgba(255, 255, 255, 0.96);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.16);
+}
+
+/* === Electronic Credential Dynamic Flowing Halo (Chapter 14) === */
+@keyframes credentialFlow {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.credential-halo-ring {
+  position: relative;
+  border-radius: 26px;
+  padding: 2.5px;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.credential-halo-ring::before {
+  content: "";
+  position: absolute;
+  inset: -45%;
+  z-index: -1;
+  background: conic-gradient(
+    from 0deg,
+    rgba(0, 113, 227, 0.85),
+    rgba(56, 189, 248, 0.72),
+    rgba(255, 255, 255, 0.95),
+    rgba(16, 185, 129, 0.75),
+    rgba(0, 113, 227, 0.85)
+  );
+  animation: credentialFlow 6s linear infinite;
+}
+
+.credential-halo-ring--gift::before {
+  background: conic-gradient(
+    from 0deg,
+    rgba(14, 165, 233, 0.85),
+    rgba(99, 102, 241, 0.7),
+    rgba(255, 255, 255, 0.95),
+    rgba(245, 158, 11, 0.7),
+    rgba(14, 165, 233, 0.85)
+  );
+}
+
+.credential-halo-ring--inactive::before {
+  background: linear-gradient(135deg, rgba(148, 163, 184, 0.45), rgba(203, 213, 225, 0.7));
+  animation: none;
+}
+
+/* === Reduced Motion Compliance === */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
