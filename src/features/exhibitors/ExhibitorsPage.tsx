@@ -13,6 +13,7 @@ import {
   UserPlus,
 } from 'lucide-react';
 import { useApp } from '../../app/providers/AppContext';
+import { PageContainer } from '../../components/layout/PageContainer';
 import {
   GlassBadge,
   GlassButton,
@@ -20,7 +21,6 @@ import {
   GlassInput,
   GlassSelect,
   GlassTabs,
-  PageHeader,
   PermissionDeniedState,
   StatusIndicator,
 } from '../../components/glass/GlassPrimitives';
@@ -178,9 +178,9 @@ export function ExhibitorsPage() {
 
   if (!canAccessModule('exhibitors')) {
     return (
-      <div className="page-container">
+      <PageContainer>
         <PermissionDeniedState moduleLabel="展商管理" />
-      </div>
+      </PageContainer>
     );
   }
 
@@ -397,7 +397,7 @@ export function ExhibitorsPage() {
       key: 'password',
       header: '唯一商务密码',
       render: (e) => (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 whitespace-nowrap">
           <span className="numeric-text font-medium text-slate-900">{e.businessPassword}</span>
           {!e.passwordActive && <StatusIndicator tone="danger" label="已停用" />}
           <button
@@ -557,37 +557,32 @@ export function ExhibitorsPage() {
     : [];
 
   return (
-    <div className="page-container--wide space-y-6">
-      <PageHeader
-        title="展商与人员登记"
-        subtitle={`当前活动：${currentAct.name} · 展商档案仅由管理员预建并分配全系统唯一商务密码`}
-        actions={
-          <>
-            <GlassButton variant="secondary" onClick={toggleSensitive}>
-              {revealSensitive ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              {revealSensitive ? '恢复脱敏' : '明文查看'}
-            </GlassButton>
-            <GlassButton variant="primary" onClick={() => setCreateOpen(true)}>
-              <Plus className="w-4 h-4" />
-              新建展商档案
-            </GlassButton>
-          </>
-        }
-      />
-
-      <GlassTabs
-        value={subTab}
-        onChange={setSubTab}
-        tabs={[
-          { id: 'exhibitors', label: '展商列表与链接管理', count: exhibitors.length },
-          { id: 'members', label: '全部人员名单', count: members.length },
-          {
-            id: 'avatars',
-            label: '头像补充进度',
-            count: members.filter((m) => !m.avatarUrl && m.status !== 'voided').length,
-          },
-        ]}
-      />
+    <PageContainer className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <GlassTabs
+          value={subTab}
+          onChange={setSubTab}
+          tabs={[
+            { id: 'exhibitors', label: '展商列表', count: exhibitors.length },
+            { id: 'members', label: '全部人员', count: members.length },
+            {
+              id: 'avatars',
+              label: '头像进度',
+              count: members.filter((m) => !m.avatarUrl && m.status !== 'voided').length,
+            },
+          ]}
+        />
+        <div className="flex items-center gap-2">
+          <GlassButton variant="secondary" onClick={toggleSensitive}>
+            {revealSensitive ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            {revealSensitive ? '恢复脱敏' : '明文查看'}
+          </GlassButton>
+          <GlassButton variant="primary" onClick={() => setCreateOpen(true)}>
+            <Plus className="w-4 h-4" />
+            新建展商档案
+          </GlassButton>
+        </div>
+      </div>
 
       {subTab === 'exhibitors' && (
         <GlassTable
@@ -613,8 +608,8 @@ export function ExhibitorsPage() {
               ]),
             )
           }
-          emptyTitle="当前活动尚未预建展商"
-          emptyDescription="点击右上角「新建展商档案」，填写 7 项档案信息并自动生成唯一商务密码。"
+          emptyTitle="暂无展商"
+          emptyDescription="点击「新建展商档案」添加展商。"
         />
       )}
 
@@ -701,11 +696,9 @@ export function ExhibitorsPage() {
         </div>
       )}
 
-      {/* Create Exhibitor Dialog */}
       <GlassDialog
         open={createOpen}
-        title="预先创建展商主档案"
-        subtitle="系统将自动生成全局唯一商务密码，并将主要联系人直接建档为 01 号人员（无需重复录入）"
+        title="新建展商档案"
         onClose={() => setCreateOpen(false)}
       >
         <form onSubmit={handleCreateExhibitor} className="space-y-4">
@@ -790,26 +783,20 @@ export function ExhibitorsPage() {
               ]}
             />
           </div>
-          <div className="glass-surface-subtle p-3 text-xs text-slate-600 flex items-center gap-2">
-            <KeyRound className="w-4 h-4 text-[#0071e3] shrink-0" />
-            <span>7. 商务密码：提交后由系统自动生成全平台唯一商务密码，正式后端安全哈希存储。</span>
-          </div>
           <div className="flex justify-end gap-2">
             <GlassButton variant="secondary" onClick={() => setCreateOpen(false)}>
               取消
             </GlassButton>
             <GlassButton type="submit" variant="primary" loading={submitting}>
-              创建展商并生成密码
+              创建展商
             </GlassButton>
           </div>
         </form>
       </GlassDialog>
 
-      {/* Exhibitor Detail Drawer */}
       <GlassDrawer
         open={Boolean(detailExhibitor)}
         title={detailExhibitor ? `${detailExhibitor.boothNumber} · ${detailExhibitor.boothName}` : ''}
-        subtitle="展商档案、商务密码管理、A/B 链接配置与人员登记明细"
         onClose={() => setDetailExhibitor(null)}
         widthClass="max-w-2xl"
       >
@@ -1093,11 +1080,9 @@ export function ExhibitorsPage() {
         )}
       </GlassDialog>
 
-      {/* Batch Import Dialog */}
       <GlassDialog
         open={Boolean(importModalExhibitor)}
         title={`批量导入人员：${importModalExhibitor?.boothNumber ?? ''} ${importModalExhibitor?.boothName ?? ''}`}
-        subtitle="支持下载 CSV/Excel 模板、自动识别字段、校验重复与名额，有效行独立导入不因单行报错丢弃"
         onClose={() => setImportModalExhibitor(null)}
         maxWidthClass="max-w-3xl"
       >
@@ -1182,11 +1167,9 @@ export function ExhibitorsPage() {
         )}
       </GlassDialog>
 
-      {/* Electronic Certificate Preview Modal */}
       <GlassDialog
         open={Boolean(previewMember)}
-        title="个人电子证件预览"
-        subtitle="采用统一手机名片式布局与 30 秒动态刷新核验码"
+        title="电子证件"
         onClose={() => setPreviewMember(null)}
         maxWidthClass="max-w-md"
       >
@@ -1211,6 +1194,6 @@ export function ExhibitorsPage() {
           />
         )}
       </GlassDialog>
-    </div>
+    </PageContainer>
   );
 }

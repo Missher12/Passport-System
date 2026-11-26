@@ -230,19 +230,15 @@ export function ElectronicCredentialCard({
                   令牌：{tokenObj.token}
                 </p>
                 {tokenObj.isMockDemo && (
-                  <p className="text-[11px] text-amber-700 text-center">
-                    演示模式动态令牌（不含身份证号，正式环境由后端签发）
-                  </p>
+                  <p className="text-[11px] text-amber-700 text-center">演示模式动态令牌</p>
                 )}
               </div>
             </>
           ) : (
             <div className="w-full py-7 px-4 rounded-2xl bg-slate-900/[0.04] text-center space-y-2">
               <ShieldAlert className="w-7 h-7 text-amber-600 mx-auto" />
-              <p className="text-sm font-medium text-slate-800">当前状态暂未生成有效动态二维码</p>
-              <p className="text-xs text-slate-500">
-                请先完成人员资料与自拍头像上传，或联系管理员解除冻结状态。
-              </p>
+              <p className="text-sm font-medium text-slate-800">暂未生成动态二维码</p>
+              <p className="text-xs text-slate-500">请先完成资料与自拍上传。</p>
             </div>
           )}
         </div>

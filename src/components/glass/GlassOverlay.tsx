@@ -134,7 +134,7 @@ export function GlassUpload({
   value,
   onChange,
   label = '本人正面自拍照',
-  helperText = '支持手机/电脑摄像头拍摄或相册上传，清晰正面免冠照用于生成电子凭证',
+  helperText = '支持摄像头拍摄或相册上传',
 }: {
   value?: string;
   onChange: (url: string) => void;
@@ -326,12 +326,8 @@ export function SmartCaptchaModal({
   return (
     <GlassDialog
       open={open && Boolean(challenge)}
-      title="Smart CAPTCHA 智能风控校验"
-      subtitle={
-        challenge?.isMockDemo
-          ? '演示模式模拟风控挑战，接入后端后由服务端 Captcha Provider Adapter 签发与校验'
-          : '检测到高频或敏感操作，请完成人机验证以继续'
-      }
+      title="人机安全校验"
+      subtitle={challenge?.isMockDemo ? '演示模式模拟校验' : undefined}
       onClose={onClose}
       maxWidthClass="max-w-md"
     >

@@ -334,7 +334,7 @@ export function EmptyState({
   action,
 }: {
   title: string;
-  description: string;
+  description?: string;
   action?: React.ReactNode;
 }) {
   return (
@@ -343,7 +343,7 @@ export function EmptyState({
         <Info className="w-5 h-5" aria-hidden="true" />
       </div>
       <h3 className="text-base font-semibold text-slate-900">{title}</h3>
-      <p className="text-sm text-slate-500 mt-1 max-w-md">{description}</p>
+      {description && <p className="text-sm text-slate-500 mt-1 max-w-md">{description}</p>}
       {action && <div className="mt-4">{action}</div>}
     </div>
   );
@@ -396,9 +396,9 @@ export function PermissionDeniedState({ moduleLabel }: { moduleLabel: string }) 
         <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-700 flex items-center justify-center mb-3">
           <Lock className="w-6 h-6" aria-hidden="true" />
         </div>
-        <h2 className="text-lg font-semibold text-slate-900">当前角色暂无「{moduleLabel}」访问权限</h2>
+        <h2 className="text-lg font-semibold text-slate-900">当前角色无「{moduleLabel}」权限</h2>
         <p className="text-sm text-slate-600 mt-1.5">
-          如需访问该模块，请联系系统管理员在「管理 → 角色权限」中为您授权，或通过右上角账户菜单切换其他演示角色体验。
+          请在「设置 → 角色权限」中配置访问授权。
         </p>
       </div>
     </GlassCard>
@@ -413,13 +413,11 @@ export function OfflineBanner({ onReconnect }: { onReconnect?: () => void }) {
     >
       <div className="flex items-center gap-2.5">
         <WifiOff className="w-4 h-4 text-red-700 shrink-0" aria-hidden="true" />
-        <span>
-          当前网络已断开（模拟断网保护已开启）：现场核销已自动锁定，恢复网络后将自动重新拉取服务端状态。
-        </span>
+        <span>当前网络已断开，现场核销已锁定。</span>
       </div>
       {onReconnect && (
         <GlassButton size="sm" variant="secondary" onClick={onReconnect}>
-          恢复网络连接
+          恢复网络
         </GlassButton>
       )}
     </div>
@@ -437,7 +435,7 @@ export function ToastContainer({
   return (
     <div
       aria-live="polite"
-      className="fixed bottom-5 right-5 z-[200] flex flex-col gap-2.5 max-w-sm w-[calc(100vw-28px)] pointer-events-none"
+      className="fixed bottom-5 left-4 right-4 sm:left-auto sm:right-5 sm:w-[380px] z-[200] flex flex-col gap-2.5 pointer-events-none"
     >
       {toasts.map((t) => (
         <div

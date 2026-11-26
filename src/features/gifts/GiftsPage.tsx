@@ -8,12 +8,12 @@ import {
   GlassInput,
   GlassSelect,
   GlassTabs,
-  PageHeader,
   PermissionDeniedState,
   StatusIndicator,
 } from '../../components/glass/GlassPrimitives';
 import { GlassDialog, GlassUpload } from '../../components/glass/GlassOverlay';
 import { GlassTable, type GlassTableColumn } from '../../components/glass/GlassTable';
+import { PageContainer } from '../../components/layout/PageContainer';
 import { ElectronicCredentialCard } from '../../components/qr/GlassQRCode';
 import { getApiClient } from '../../services/api';
 import {
@@ -117,9 +117,9 @@ export function GiftsPage() {
 
   if (!canAccessModule('gifts')) {
     return (
-      <div className="page-container">
+      <PageContainer>
         <PermissionDeniedState moduleLabel="赠票管理" />
-      </div>
+      </PageContainer>
     );
   }
 
@@ -340,38 +340,33 @@ export function GiftsPage() {
   ];
 
   return (
-    <div className="page-container--wide space-y-6">
-      <PageHeader
-        title="赠票管理"
-        subtitle={`当前活动：${currentAct.name} · 赠票资料库与证件库完全独立，同一活动跨批次自动拦截重复身份自助领票`}
-        actions={
-          <>
-            <GlassButton variant="secondary" onClick={() => switchPortal('gift')}>
-              <ExternalLink className="w-4 h-4" />
-              打开外部自助领票端
-            </GlassButton>
-            <GlassButton variant="primary" onClick={() => setBatchModalOpen(true)}>
-              <Plus className="w-4 h-4" />
-              新建自助赠票批次
-            </GlassButton>
-          </>
-        }
-      />
-
-      <GlassTabs
-        value={tab}
-        onChange={setTab}
-        tabs={[
-          { id: 'batches', label: '自助领票批次', count: batches.length },
-          { id: 'backend_issue', label: '后台赠票发放' },
-          { id: 'tickets', label: '赠票名单（一票一码）', count: tickets.length },
-        ]}
-      />
+    <PageContainer className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <GlassTabs
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { id: 'batches', label: '自助批次', count: batches.length },
+            { id: 'backend_issue', label: '后台发放' },
+            { id: 'tickets', label: '赠票名单', count: tickets.length },
+          ]}
+        />
+        <div className="flex items-center gap-2">
+          <GlassButton variant="secondary" onClick={() => switchPortal('gift')}>
+            <ExternalLink className="w-4 h-4" />
+            外部领票端
+          </GlassButton>
+          <GlassButton variant="primary" onClick={() => setBatchModalOpen(true)}>
+            <Plus className="w-4 h-4" />
+            新建赠票批次
+          </GlassButton>
+        </div>
+      </div>
 
       {tab === 'batches' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {batches.map((b) => (
-            <GlassCard key={b.id} className="space-y-4">
+            <GlassCard key={b.id} className="space-y-4 min-w-0">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold text-slate-900">{b.name}</h2>
@@ -438,13 +433,8 @@ export function GiftsPage() {
       {tab === 'backend_issue' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Direct Issue */}
-          <GlassCard className="lg:col-span-7 space-y-4">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900">后台直接录入发放（即时生成一票一码）</h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                发现同一活动内重复身份时自动拦截提示，仅授权角色确认后才可额外增发独立票码。
-              </p>
-            </div>
+          <GlassCard className="lg:col-span-7 space-y-4 min-w-0">
+            <h2 className="text-base font-semibold text-slate-900">后台直接发放</h2>
             <form onSubmit={handleDirectIssue} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <GlassInput
@@ -533,16 +523,11 @@ export function GiftsPage() {
           </GlassCard>
 
           {/* Batch Import */}
-          <GlassCard className="lg:col-span-5 space-y-4">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900 flex items-center gap-1.5">
-                <Upload className="w-4 h-4 text-[#0071e3]" />
-                批量名单导入（生成专属登记链接）
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                导入名单后为每位受邀人生成专属补充链接，由领取者自行上传自拍照并激活电子赠票。
-              </p>
-            </div>
+          <GlassCard className="lg:col-span-5 space-y-4 min-w-0">
+            <h2 className="text-base font-semibold text-slate-900 flex items-center gap-1.5">
+              <Upload className="w-4 h-4 text-[#0071e3]" />
+              批量名单导入
+            </h2>
             <GlassInput
               label="导入批次名称"
               value={importBatchName}
@@ -621,7 +606,6 @@ export function GiftsPage() {
       <GlassDialog
         open={batchModalOpen}
         title="新建自助领票批次"
-        subtitle="领取者仅可从管理员配置的开放日期中选择，跨批次同身份自动排重"
         onClose={() => setBatchModalOpen(false)}
       >
         <form onSubmit={handleCreateBatch} className="space-y-4">
@@ -696,6 +680,6 @@ export function GiftsPage() {
           />
         )}
       </GlassDialog>
-    </div>
+    </PageContainer>
   );
 }

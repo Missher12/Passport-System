@@ -27,8 +27,8 @@ export function GlassTable<T extends { id: string }>({
   batchActions,
   onExportCsv,
   exportLabel = '导出 CSV',
-  emptyTitle = '暂无符合条件的数据',
-  emptyDescription = '您可以调整筛选条件或新建业务记录。',
+  emptyTitle = '暂无数据',
+  emptyDescription = '当前没有符合条件的记录',
   emptyAction,
   pageSize = 10,
 }: {
@@ -110,7 +110,7 @@ export function GlassTable<T extends { id: string }>({
   };
 
   return (
-    <div className="glass-surface overflow-hidden">
+    <div className="glass-surface w-full min-w-0 overflow-hidden">
       {(searchable || filterSlot || onExportCsv || (selectedIds.length > 0 && batchActions)) && (
         <div className="p-4 border-b border-slate-900/[0.06] flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-0">
@@ -162,7 +162,7 @@ export function GlassTable<T extends { id: string }>({
         <EmptyState title={emptyTitle} description={emptyDescription} action={emptyAction} />
       ) : (
         <>
-          <div className="overflow-x-auto">
+          <div className="w-full overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-slate-900/[0.07] bg-white/40">

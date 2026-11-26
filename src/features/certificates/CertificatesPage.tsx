@@ -8,6 +8,7 @@ import {
   UserPlus,
 } from 'lucide-react';
 import { useApp } from '../../app/providers/AppContext';
+import { PageContainer } from '../../components/layout/PageContainer';
 import {
   GlassBadge,
   GlassButton,
@@ -15,7 +16,6 @@ import {
   GlassInput,
   GlassSelect,
   GlassTabs,
-  PageHeader,
   PermissionDeniedState,
   StatusIndicator,
 } from '../../components/glass/GlassPrimitives';
@@ -157,9 +157,9 @@ export function CertificatesPage() {
 
   if (!canAccessModule('certificates')) {
     return (
-      <div className="page-container">
+      <PageContainer>
         <PermissionDeniedState moduleLabel="证件管理" />
-      </div>
+      </PageContainer>
     );
   }
 
@@ -449,20 +449,15 @@ export function CertificatesPage() {
   ];
 
   return (
-    <div className="page-container--wide space-y-6">
-      <PageHeader
-        title="证件管理与现场加证"
-        subtitle={`当前活动：${currentAct.name} · 支持个人扫码领取、展位按人批量领取、超额现场加证与自定义证件类别`}
-      />
-
+    <PageContainer className="space-y-5">
       <GlassTabs
         value={tab}
         onChange={setTab}
         tabs={[
-          { id: 'booth_claim', label: '展位批量领取与统计', count: exhibitors.length },
+          { id: 'booth_claim', label: '展位发证', count: exhibitors.length },
           { id: 'individual', label: '个人扫码领证' },
-          { id: 'onsite_extra', label: '现场加证（一次性码）', count: extraTokens.length },
-          { id: 'categories', label: '证件类别管理', count: categories.length },
+          { id: 'onsite_extra', label: '现场加证', count: extraTokens.length },
+          { id: 'categories', label: '证件类别', count: categories.length },
         ]}
       />
 
@@ -527,10 +522,7 @@ export function CertificatesPage() {
       {tab === 'individual' && (
         <div className="max-w-2xl space-y-5">
           <GlassCard className="space-y-4">
-            <h2 className="text-base font-semibold text-slate-900">个人扫码 / 编号确认领取实体证件</h2>
-            <p className="text-xs text-slate-500">
-              扫描人员电子证件二维码或输入人员编号（如 A01-02、B08-01），核验人像后确认发放实体证件。
-            </p>
+            <h2 className="text-base font-semibold text-slate-900">个人扫码领证</h2>
             <div className="flex gap-2">
               <div className="flex-1">
                 <GlassInput
@@ -591,18 +583,11 @@ export function CertificatesPage() {
 
       {tab === 'onsite_extra' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <GlassCard className="lg:col-span-7 space-y-4">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-                  <UserPlus className="w-4 h-4 text-[#0071e3]" />
-                  授权现场超额加证流程
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  核对展商 7 项档案信息并填写加证原因，生成一次性加证二维码，展商扫码填写后自动递增编号并失效。
-                </p>
-              </div>
-            </div>
+          <GlassCard className="lg:col-span-7 min-w-0 space-y-4">
+            <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+              <UserPlus className="w-4 h-4 text-[#0071e3]" />
+              现场加证
+            </h2>
 
             <form onSubmit={handleIssueOnsiteToken} className="space-y-4">
               <div className="flex flex-wrap items-end gap-2">
@@ -757,9 +742,6 @@ export function CertificatesPage() {
               <GlassCard className="text-center py-10 space-y-2">
                 <ShieldAlert className="w-8 h-8 text-slate-400 mx-auto" />
                 <p className="text-sm font-medium text-slate-800">尚未生成一次性加证码</p>
-                <p className="text-xs text-slate-500">
-                  在左侧核对展商 7 项信息并填写新增原因后，即可在此生成可扫码的一次性凭证。
-                </p>
               </GlassCard>
             )}
 
@@ -831,11 +813,9 @@ export function CertificatesPage() {
         </div>
       )}
 
-      {/* Simulated Onsite Extra Member Fill Dialog */}
       <GlassDialog
         open={Boolean(simulateScanToken)}
-        title={`现场加证扫码填报：${simulateScanToken?.boothNumber ?? ''} ${simulateScanToken?.boothName ?? ''}`}
-        subtitle="提交后将自动递增展位人员编号，且一次性加证二维码使用后即刻失效"
+        title={`现场加证登记：${simulateScanToken?.boothNumber ?? ''} ${simulateScanToken?.boothName ?? ''}`}
         onClose={() => setSimulateScanToken(null)}
       >
         <form onSubmit={handleSubmitSimulatedExtra} className="space-y-4">
@@ -993,6 +973,6 @@ export function CertificatesPage() {
           />
         )}
       </GlassDialog>
-    </div>
+    </PageContainer>
   );
 }

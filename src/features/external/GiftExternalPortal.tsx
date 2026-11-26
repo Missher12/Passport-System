@@ -10,6 +10,7 @@ import {
   PageHeader,
 } from '../../components/glass/GlassPrimitives';
 import { GlassUpload, SmartCaptchaModal } from '../../components/glass/GlassOverlay';
+import { PageContainer } from '../../components/layout/PageContainer';
 import { ElectronicCredentialCard } from '../../components/qr/GlassQRCode';
 import { getApiClient } from '../../services/api';
 import { COUNTRY_CODES, GIFT_STATUS_LABELS, ID_TYPE_LABELS } from '../../utils/stateMachines';
@@ -139,20 +140,16 @@ export function GiftExternalPortal() {
   };
 
   return (
-    <div className="page-container max-w-2xl space-y-6">
-      <PageHeader
-        title="活动电子赠票领取"
-        subtitle={`${currentAct.name} · 同一活动内每个身份仅限自助领取 1 张赠票，一票一码实名核验`}
-      />
+    <PageContainer className="space-y-6">
+      <PageHeader title="活动电子赠票领取" subtitle={currentAct.name} />
 
       {issuedTicket ? (
         <div className="space-y-5">
           <GlassCard elevated className="text-center space-y-2">
             <CheckCircle2 className="w-10 h-10 text-[#15803d] mx-auto" />
             <h2 className="text-lg font-semibold text-slate-900">电子赠票已签发</h2>
-            <p className="text-xs text-slate-600">
-              请在限定使用日期（<span className="date-number font-semibold">{issuedTicket.useDate}</span>
-              ）携本人出示下方实时动态二维码核销入场。
+            <p className="text-xs text-slate-600 date-number">
+              有效使用日期：{issuedTicket.useDate}
             </p>
           </GlassCard>
 
@@ -179,7 +176,7 @@ export function GiftExternalPortal() {
                 setErrorMsg(null);
               }}
             >
-              返回领票表单（可测试同身份重复拦截）
+              返回领票
             </GlassButton>
           </div>
         </div>
@@ -271,9 +268,7 @@ export function GiftExternalPortal() {
                       选择使用日期
                       <span className="text-red-600 ml-0.5">*</span>
                       {currentBatch.availableDates.length === 1 && (
-                        <span className="text-slate-400 font-normal ml-2">
-                          （本批次仅开放单日，已自动锁定）
-                        </span>
+                        <span className="text-slate-400 font-normal ml-2">（仅开放单日）</span>
                       )}
                     </label>
                     <div className="flex flex-wrap gap-2">
@@ -336,16 +331,14 @@ export function GiftExternalPortal() {
             </GlassCard>
           ) : (
             <GlassCard elevated padding="lg" className="space-y-4">
-              <p className="text-xs text-slate-600">
-                适用于后台批量导入名单生成的专属登记链接（如演示邀请码 <strong className="numeric-text">INV-GZ-0004</strong>），补充手机号与自拍照后即可激活电子赠票。
-              </p>
               <form onSubmit={handleCompleteInvited} className="space-y-4">
                 <GlassInput
-                  label="专属邀请链接码"
+                  label="专属邀请码"
                   required
                   numeric
                   value={inviteToken}
                   onChange={(e) => setInviteToken(e.target.value)}
+                  placeholder="例如：INV-GZ-0004"
                 />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div className="grid grid-cols-5 gap-2">
@@ -410,6 +403,6 @@ export function GiftExternalPortal() {
           submitSelfClaim(token);
         }}
       />
-    </div>
+    </PageContainer>
   );
 }

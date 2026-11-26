@@ -6,12 +6,12 @@ import {
   GlassCard,
   GlassInput,
   GlassSelect,
-  PageHeader,
   PermissionDeniedState,
   StatusIndicator,
 } from '../../components/glass/GlassPrimitives';
 import { GlassDialog } from '../../components/glass/GlassOverlay';
 import { GlassTable, type GlassTableColumn } from '../../components/glass/GlassTable';
+import { PageContainer } from '../../components/layout/PageContainer';
 import { getApiClient } from '../../services/api';
 import { buildCsvDownloadContent, formatDateTimeDisplay } from '../../utils/stateMachines';
 import type {
@@ -96,9 +96,9 @@ export function UsersManagePage() {
 
   if (!canAccessModule('users')) {
     return (
-      <div className="page-container">
+      <PageContainer>
         <PermissionDeniedState moduleLabel="用户账号" />
-      </div>
+      </PageContainer>
     );
   }
 
@@ -183,17 +183,13 @@ export function UsersManagePage() {
   ];
 
   return (
-    <div className="page-container space-y-6">
-      <PageHeader
-        title="用户账号管理"
-        subtitle="为每位内部员工配置部门、角色及独立的现场核销工作模式（普通模式 / 快速模式）"
-        actions={
-          <GlassButton variant="primary" onClick={() => openModal()}>
-            <Plus className="w-4 h-4" />
-            新增内部账号
-          </GlassButton>
-        }
-      />
+    <PageContainer className="space-y-5">
+      <div className="flex items-center justify-end">
+        <GlassButton variant="primary" onClick={() => openModal()}>
+          <Plus className="w-4 h-4" />
+          新增账号
+        </GlassButton>
+      </div>
       <GlassTable rows={users} columns={columns} searchable={false} />
 
       <GlassDialog
@@ -275,7 +271,7 @@ export function UsersManagePage() {
           </div>
         </form>
       </GlassDialog>
-    </div>
+    </PageContainer>
   );
 }
 
@@ -303,41 +299,37 @@ export function RolesManagePage() {
 
   if (!canAccessModule('roles')) {
     return (
-      <div className="page-container">
+      <PageContainer>
         <PermissionDeniedState moduleLabel="角色权限" />
-      </div>
+      </PageContainer>
     );
   }
 
   return (
-    <div className="page-container space-y-6">
-      <PageHeader
-        title="角色与模块权限"
-        subtitle="预设五类核心业务角色，支持清晰灵活地自定义角色与可访问业务模块，无需复杂权限继承"
-        actions={
-          <GlassButton
-            variant="primary"
-            onClick={() =>
-              setEditing({
-                code: '',
-                name: '',
-                description: '',
-                modules: ['dashboard', 'redemption'],
-                defaultRedemptionMode: 'normal',
-                canViewUnmaskedSensitive: false,
-                canOverrideDuplicateGift: false,
-              })
-            }
-          >
-            <Plus className="w-4 h-4" />
-            新增自定义角色
-          </GlassButton>
-        }
-      />
+    <PageContainer className="space-y-5">
+      <div className="flex items-center justify-end">
+        <GlassButton
+          variant="primary"
+          onClick={() =>
+            setEditing({
+              code: '',
+              name: '',
+              description: '',
+              modules: ['dashboard', 'redemption'],
+              defaultRedemptionMode: 'normal',
+              canViewUnmaskedSensitive: false,
+              canOverrideDuplicateGift: false,
+            })
+          }
+        >
+          <Plus className="w-4 h-4" />
+          新增角色
+        </GlassButton>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {roles.map((r) => (
-          <GlassCard key={r.id} className="space-y-3">
+          <GlassCard key={r.id} className="space-y-3 min-w-0">
             <div className="flex items-start justify-between gap-2">
               <div>
                 <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
@@ -456,7 +448,7 @@ export function RolesManagePage() {
           </form>
         )}
       </GlassDialog>
-    </div>
+    </PageContainer>
   );
 }
 
@@ -474,27 +466,23 @@ export function DepartmentsManagePage() {
 
   if (!canAccessModule('departments')) {
     return (
-      <div className="page-container">
+      <PageContainer>
         <PermissionDeniedState moduleLabel="部门管理" />
-      </div>
+      </PageContainer>
     );
   }
 
   return (
-    <div className="page-container space-y-6">
-      <PageHeader
-        title="部门管理"
-        subtitle="维护活动运营、票证制发及现场执勤部门结构"
-        actions={
-          <GlassButton variant="primary" onClick={() => setEditing({ name: '', description: '' })}>
-            <Plus className="w-4 h-4" />
-            新增部门
-          </GlassButton>
-        }
-      />
+    <PageContainer className="space-y-5">
+      <div className="flex items-center justify-end">
+        <GlassButton variant="primary" onClick={() => setEditing({ name: '', description: '' })}>
+          <Plus className="w-4 h-4" />
+          新增部门
+        </GlassButton>
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {depts.map((d) => (
-          <GlassCard key={d.id} className="space-y-3">
+          <GlassCard key={d.id} className="space-y-3 min-w-0">
             <div className="flex items-center justify-between">
               <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
                 <Building2 className="w-4 h-4 text-[#0071e3]" />
@@ -558,7 +546,7 @@ export function DepartmentsManagePage() {
           </form>
         )}
       </GlassDialog>
-    </div>
+    </PageContainer>
   );
 }
 
@@ -580,9 +568,9 @@ export function AuditLogsPage() {
 
   if (!canAccessModule('audit_logs')) {
     return (
-      <div className="page-container">
+      <PageContainer>
         <PermissionDeniedState moduleLabel="操作日志" />
-      </div>
+      </PageContainer>
     );
   }
 
@@ -644,11 +632,7 @@ export function AuditLogsPage() {
   ];
 
   return (
-    <div className="page-container--wide space-y-6">
-      <PageHeader
-        title="全量操作审计日志"
-        subtitle="记录创建活动、展商建档、密码重置、现场加证、头像上传、证件领取、赠票发放、核销与权限修改；普通用户无权删除日志。"
-      />
+    <PageContainer className="space-y-5">
       <GlassTable
         rows={logs}
         columns={columns}
@@ -694,7 +678,7 @@ export function AuditLogsPage() {
           URL.revokeObjectURL(url);
         }}
       />
-    </div>
+    </PageContainer>
   );
 }
 
@@ -719,35 +703,29 @@ export function SystemSettingsPage() {
 
   if (!canAccessModule('settings')) {
     return (
-      <div className="page-container">
+      <PageContainer>
         <PermissionDeniedState moduleLabel="系统设置" />
-      </div>
+      </PageContainer>
     );
   }
 
   return (
-    <div className="page-container space-y-6">
-      <PageHeader
-        title="系统设置与适配器管理"
-        subtitle="区分 Mock Adapter 演示模式与 Production API Adapter 正式后端接口，并提供验收所需的模拟时钟与断网保护开关。"
-      />
-
+    <PageContainer className="space-y-5">
       <GlassCard className="space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <GlassSelect
-            label="数据服务适配器模式"
+            label="数据服务适配器"
             value={adapterMode}
             onChange={(e) => setAdapterMode(e.target.value as AdapterMode)}
             options={[
-              { value: 'mock', label: 'Mock Adapter（当前演示模式，带完整状态模拟）' },
-              { value: 'production', label: 'Production API Adapter（对接真实后端 /api/v1）' },
+              { value: 'mock', label: 'Mock Adapter（演示模式）' },
+              { value: 'production', label: 'Production API Adapter（正式接口）' },
             ]}
           />
           <GlassInput
-            label="Production API Base URL"
+            label="API Base URL"
             value={apiBaseUrl}
             onChange={(e) => setApiBaseUrl(e.target.value)}
-            hint="正式接入后端后由环境变量 VITE_API_BASE_URL 覆盖"
           />
           <GlassInput
             label="动态二维码刷新周期（秒）"
@@ -769,18 +747,14 @@ export function SystemSettingsPage() {
           />
         </div>
 
-        {/* Verification Simulation Controls */}
         <div className="pt-4 border-t border-slate-900/[0.08] space-y-4">
-          <h3 className="text-sm font-semibold text-slate-900">验收测试辅助控制（仅 Mock 模式生效）</h3>
+          <h3 className="text-sm font-semibold text-slate-900">测试辅助（仅 Mock 模式）</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="glass-surface-subtle p-4 space-y-2">
+            <div className="glass-surface-subtle p-4 space-y-2 min-w-0">
               <div className="flex items-center gap-2 text-sm font-medium text-slate-900">
                 <Clock className="w-4 h-4 text-[#0071e3]" />
-                模拟活动时钟偏移（天）
+                活动时钟偏移（天）
               </div>
-              <p className="text-xs text-slate-500">
-                可向前/向后偏移系统时间（如 -10 天回到「展商资料登记阶段」，0 天处于「头像补充阶段」），验证原链接自动切换。
-              </p>
               <GlassInput
                 type="number"
                 numeric
@@ -789,14 +763,11 @@ export function SystemSettingsPage() {
               />
             </div>
 
-            <div className="glass-surface-subtle p-4 space-y-2">
+            <div className="glass-surface-subtle p-4 space-y-2 min-w-0">
               <div className="flex items-center gap-2 text-sm font-medium text-slate-900">
                 <WifiOff className="w-4 h-4 text-red-600" />
-                模拟现场网络断开保护
+                断网保护模拟
               </div>
-              <p className="text-xs text-slate-500">
-                开启后将立即显示全局断网提示，并强制阻止现场扫码核销，验证断网不假装核销成功。
-              </p>
               <label className="flex items-center gap-2 text-sm text-slate-800 pt-1 cursor-pointer">
                 <input
                   type="checkbox"
@@ -804,7 +775,7 @@ export function SystemSettingsPage() {
                   onChange={(e) => setSimulateOffline(e.target.checked)}
                   className="w-4 h-4 accent-[#0071e3]"
                 />
-                启用断网保护模拟
+                启用断网状态模拟
               </label>
             </div>
           </div>
@@ -828,6 +799,6 @@ export function SystemSettingsPage() {
           </GlassButton>
         </div>
       </GlassCard>
-    </div>
+    </PageContainer>
   );
 }

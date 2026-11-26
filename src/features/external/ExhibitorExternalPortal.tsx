@@ -21,6 +21,7 @@ import {
   StatusIndicator,
 } from '../../components/glass/GlassPrimitives';
 import { GlassDialog, GlassUpload, SmartCaptchaModal } from '../../components/glass/GlassOverlay';
+import { PageContainer } from '../../components/layout/PageContainer';
 import { ElectronicCredentialCard, formatValidDateRange } from '../../components/qr/GlassQRCode';
 import { getApiClient } from '../../services/api';
 import {
@@ -298,15 +299,15 @@ export function ExhibitorExternalPortal() {
   // === Unauthenticated View: 7-Field Verification OR One-Time Onsite Extra Form ===
   if (!verifiedExhibitor) {
     return (
-      <div className="page-container max-w-2xl space-y-6">
+      <PageContainer className="space-y-6">
         <PageHeader
-          title="外部展商证件服务入口"
-          subtitle={`当前活动：${currentAct.name} · ${
+          title="外部展商证件入口"
+          subtitle={`${currentAct.name} · ${
             portalPhase === 'avatar'
-              ? '当前已自动切换至「证件头像补充阶段」'
+              ? '头像补充阶段'
               : portalPhase === 'registration'
-                ? '当前处于「展商人员资料登记阶段」'
-                : '当前通道等待开放或已截止'
+                ? '人员登记阶段'
+                : '通道未开放'
           }`}
         />
 
@@ -314,27 +315,22 @@ export function ExhibitorExternalPortal() {
           value={entryMode}
           onChange={setEntryMode}
           tabs={[
-            { id: 'verify', label: '展商 7 项信息验证入口' },
-            { id: 'onsite_extra', label: '现场加证一次性码入口' },
+            { id: 'verify', label: '展商信息验证' },
+            { id: 'onsite_extra', label: '现场加证码' },
           ]}
         />
 
         {entryMode === 'verify' ? (
           <GlassCard elevated padding="lg" className="space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-900/[0.07]">
-              <div>
-                <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-                  <KeyRound className="w-4 h-4 text-[#0071e3]" />
-                  {verifyForm.independentToken
-                    ? `模式 A · 独立链接认证（Token: ${verifyForm.independentToken}）`
-                    : '模式 B · 活动统一入口（7 项信息完整核验）'}
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  须与管理员预先登记的展商档案完全一致，验证后仅可查看并管理本展位资料。
-                </p>
-              </div>
+              <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+                <KeyRound className="w-4 h-4 text-[#0071e3]" />
+                {verifyForm.independentToken
+                  ? `独立链接验证（${verifyForm.independentToken}）`
+                  : '展商 7 项信息核验'}
+              </h2>
               <GlassButton size="sm" variant="secondary" onClick={prefillDemoA01}>
-                填充演示展商 A01 信息
+                填充演示展商 A01
               </GlassButton>
             </div>
 
@@ -526,7 +522,7 @@ export function ExhibitorExternalPortal() {
             runVerify(token);
           }}
         />
-      </div>
+      </PageContainer>
     );
   }
 
@@ -536,10 +532,10 @@ export function ExhibitorExternalPortal() {
   const avatarDoneCount = members.filter((m) => Boolean(m.avatarUrl)).length;
 
   return (
-    <div className="page-container space-y-6">
+    <PageContainer className="space-y-6">
       <PageHeader
         title={`${verifiedExhibitor.boothNumber} · ${verifiedExhibitor.boothName}`}
-        subtitle={`展商专属隔离空间 · 主联系人：${verifiedExhibitor.primaryContactName}（已自动占用 ${verifiedExhibitor.boothNumber}-01）`}
+        subtitle={`主联系人：${verifiedExhibitor.primaryContactName}`}
         actions={
           <GlassButton variant="secondary" onClick={() => setVerifiedExhibitor(null)}>
             <LogOut className="w-4 h-4" />
@@ -550,32 +546,26 @@ export function ExhibitorExternalPortal() {
 
       {/* Phase Status & Quota Summary */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <GlassCard>
+        <GlassCard className="min-w-0">
           <p className="text-xs text-slate-500">当前开放阶段</p>
           <p className="text-base font-semibold text-slate-900 mt-1">
             {portalPhase === 'avatar' ? '证件头像补充阶段' : '人员资料登记阶段'}
           </p>
-          <p className="text-xs text-slate-500 mt-1">
-            {portalPhase === 'avatar'
-              ? '已到达头像开放日，每位成员可独立上传自拍生成电子证件'
-              : '第一阶段只需提交个人文字资料，无需上传自拍照'}
-          </p>
         </GlassCard>
-        <GlassCard>
+        <GlassCard className="min-w-0">
           <p className="text-xs text-slate-500">申请名额使用情况</p>
           <p className="text-2xl font-semibold text-slate-900 stat-number mt-1">
             {normalUsed} / {verifiedExhibitor.quota}
           </p>
           <p className="text-xs text-slate-500 mt-1 numeric-text">
-            剩余常规名额 {remainingQuota} 人 · 现场加证 {verifiedExhibitor.onsiteExtraCount} 人
+            剩余 {remainingQuota} 人 · 现场加证 {verifiedExhibitor.onsiteExtraCount} 人
           </p>
         </GlassCard>
-        <GlassCard>
-          <p className="text-xs text-slate-500">头像补拍与电子证件</p>
+        <GlassCard className="min-w-0">
+          <p className="text-xs text-slate-500">已完成自拍</p>
           <p className="text-2xl font-semibold text-slate-900 stat-number mt-1">
             {avatarDoneCount} / {members.length}
           </p>
-          <p className="text-xs text-slate-500 mt-1">单人未上传不影响其余已完成人员的电子证件生成</p>
         </GlassCard>
       </div>
 
@@ -595,14 +585,14 @@ export function ExhibitorExternalPortal() {
 
       {spaceTab === 'register' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <GlassCard className="lg:col-span-5 space-y-4">
+          <GlassCard className="lg:col-span-5 space-y-4 min-w-0">
             <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
               <UserPlus className="w-4 h-4 text-[#0071e3]" />
-              新增展位人员（一次性填写完整资料）
+              新增展位人员
             </h2>
             {remainingQuota === 0 ? (
               <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
-                常规申请名额（{verifiedExhibitor.quota} 人）已满，展商端已自动锁定新增入口。如需超额增员，请联系管理员调整名额或办理现场加证。
+                常规名额已满（{verifiedExhibitor.quota} 人），如需增员请联系管理员。
               </div>
             ) : (
               <form onSubmit={handleAddMember} className="space-y-3.5">
@@ -661,7 +651,7 @@ export function ExhibitorExternalPortal() {
             )}
           </GlassCard>
 
-          <GlassCard className="lg:col-span-7 space-y-3">
+          <GlassCard className="lg:col-span-7 space-y-3 min-w-0">
             <h2 className="text-base font-semibold text-slate-900">
               本展位已登记名单（共 <span className="numeric-text">{members.length}</span> 人）
             </h2>
@@ -743,15 +733,10 @@ export function ExhibitorExternalPortal() {
       {spaceTab === 'batch' && (
         <GlassCard className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-                <Upload className="w-4 h-4 text-[#0071e3]" />
-                批量导入展位人员（剩余常规名额 <span className="numeric-text">{remainingQuota}</span> 人）
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                自动检查证件格式、重复记录与名额上限；单行错误不会导致其余有效数据丢失。
-              </p>
-            </div>
+            <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+              <Upload className="w-4 h-4 text-[#0071e3]" />
+              批量导入人员（剩余名额 <span className="numeric-text">{remainingQuota}</span> 人）
+            </h2>
             <GlassButton
               size="sm"
               variant="secondary"
@@ -837,8 +822,7 @@ export function ExhibitorExternalPortal() {
       {/* Avatar Upload Modal */}
       <GlassDialog
         open={Boolean(avatarTarget)}
-        title={`补充证件自拍照：${avatarTarget?.memberCode ?? ''} ${avatarTarget?.name ?? ''}`}
-        subtitle="上传清晰正面自拍照后，系统自动更新个人状态并签发电子工作证件"
+        title={`补充证件自拍：${avatarTarget?.memberCode ?? ''} ${avatarTarget?.name ?? ''}`}
         onClose={() => setAvatarTarget(null)}
         maxWidthClass="max-w-lg"
       >
@@ -887,6 +871,6 @@ export function ExhibitorExternalPortal() {
           />
         )}
       </GlassDialog>
-    </div>
+    </PageContainer>
   );
 }

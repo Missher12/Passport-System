@@ -3,6 +3,7 @@ import { ExternalLink, KeyRound, ShieldCheck, Sparkles, Ticket } from 'lucide-re
 import { useApp } from '../../app/providers/AppContext';
 import { GlassButton, GlassCard, GlassInput } from '../../components/glass/GlassPrimitives';
 import { SmartCaptchaModal } from '../../components/glass/GlassOverlay';
+import { PageContainer } from '../../components/layout/PageContainer';
 import { getApiClient } from '../../services/api';
 import type { CaptchaChallenge } from '../../types/domain';
 
@@ -45,19 +46,18 @@ export function LoginPage() {
   };
 
   return (
-    <div className="min-h-dvh liquid-canvas flex items-center justify-center p-4">
-      <div className="w-full max-w-[460px] space-y-5">
-        <div className="text-center space-y-2">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#0071e3] to-[#38bdf8] text-white flex items-center justify-center shadow-[0_10px_28px_rgba(0,113,227,0.28)] mx-auto">
-            <Sparkles className="w-6 h-6" />
+    <div className="min-h-dvh liquid-canvas flex items-center py-8">
+      <PageContainer>
+        <div className="w-full max-w-[460px] mx-auto space-y-5">
+          <div className="text-center space-y-2">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#0071e3] to-[#38bdf8] text-white flex items-center justify-center shadow-[0_10px_28px_rgba(0,113,227,0.28)] mx-auto">
+              <Sparkles className="w-6 h-6" />
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+              萤火通行
+            </h1>
+            <p className="text-xs text-slate-500">活动证件与赠票管理系统 · 演示模式</p>
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-            萤火通行 · 活动证件与赠票管理系统
-          </h1>
-          <p className="text-sm text-slate-600">
-            内部工作台统一认证登录（当前演示模式使用 Mock Adapter）
-          </p>
-        </div>
 
         <GlassCard elevated padding="lg">
           <form
@@ -102,7 +102,7 @@ export function LoginPage() {
           </form>
 
           <div className="mt-5 pt-4 border-t border-slate-900/[0.07] space-y-2.5">
-            <p className="text-xs font-medium text-slate-500">快捷填充演示账号（验证五类预设角色权限）</p>
+            <p className="text-xs font-medium text-slate-500">演示账号快捷填充</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
               {DEMO_ACCOUNTS.map((acc) => (
                 <button
@@ -144,7 +144,8 @@ export function LoginPage() {
             </div>
           </div>
         </GlassCard>
-      </div>
+        </div>
+      </PageContainer>
 
       <SmartCaptchaModal
         open={Boolean(captchaChallenge)}

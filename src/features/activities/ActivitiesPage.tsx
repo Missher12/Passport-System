@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Archive, Calendar, Edit3, PauseCircle, PlayCircle, Plus, Search } from 'lucide-react';
 import { useApp } from '../../app/providers/AppContext';
+import { PageContainer } from '../../components/layout/PageContainer';
 import {
   EmptyState,
   GlassButton,
@@ -9,7 +10,6 @@ import {
   GlassInput,
   GlassSelect,
   GlassTabs,
-  PageHeader,
   PermissionDeniedState,
   StatusIndicator,
 } from '../../components/glass/GlassPrimitives';
@@ -79,9 +79,9 @@ export function ActivitiesPage() {
 
   if (!canAccessModule('activities')) {
     return (
-      <div className="page-container">
+      <PageContainer>
         <PermissionDeniedState moduleLabel="活动管理" />
-      </div>
+      </PageContainer>
     );
   }
 
@@ -200,49 +200,43 @@ export function ActivitiesPage() {
   };
 
   return (
-    <div className="page-container space-y-6">
-      <PageHeader
-        title="活动管理"
-        subtitle="支持多活动并行运行，每场活动拥有完全隔离的展商、证件、赠票与核销数据，以及 12 项独立业务时间窗口。"
-        actions={
-          <GlassButton variant="primary" onClick={openCreate}>
-            <Plus className="w-4 h-4" />
-            创建新活动
-          </GlassButton>
-        }
-      />
-
-      {/* Filter Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <PageContainer className="space-y-5">
+      {/* Unified Filter & Create Toolbar */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <GlassTabs
           value={statusFilter}
           onChange={setStatusFilter}
           tabs={[
-            { id: 'all', label: '全部活动', count: activities.length },
+            { id: 'all', label: '全部', count: activities.length },
             { id: 'active', label: '进行中', count: activities.filter((a) => a.status === 'active').length },
             { id: 'draft', label: '即将开始', count: activities.filter((a) => a.status === 'draft').length },
             { id: 'paused', label: '已暂停', count: activities.filter((a) => a.status === 'paused').length },
             { id: 'archived', label: '已归档', count: activities.filter((a) => a.status === 'archived').length },
           ]}
         />
-        <div className="relative w-full sm:w-64">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="搜索活动名称或地点..."
-            className="glass-input h-[38px] pl-9 pr-3 text-sm w-full"
-          />
+        <div className="flex items-center gap-2.5">
+          <div className="relative flex-1 sm:w-56 sm:flex-none">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索活动..."
+              className="glass-input h-[38px] pl-9 pr-3 text-sm w-full"
+            />
+          </div>
+          <GlassButton variant="primary" onClick={openCreate}>
+            <Plus className="w-4 h-4" />
+            创建新活动
+          </GlassButton>
         </div>
       </div>
 
-      {/* Activity Cards Grid */}
+      {/* Single-Row Horizontal Activity Cards */}
       {filtered.length === 0 ? (
         <GlassCard>
           <EmptyState
-            title="未找到符合条件的活动"
-            description="您可以清空筛选条件，或立即创建新的展会活动。"
+            title="暂无符合条件的活动"
             action={
               <GlassButton variant="primary" onClick={openCreate}>
                 创建新活动
@@ -251,100 +245,101 @@ export function ActivitiesPage() {
           />
         </GlassCard>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div className="flex flex-col gap-3.5">
           {filtered.map((act) => {
             const st = STATUS_META[act.status];
             const isCurrent = act.id === activeActivityId;
             return (
               <GlassCard
                 key={act.id}
-                padding="none"
-                className={`overflow-hidden flex flex-col ${isCurrent ? 'ring-2 ring-[#0071e3]/45' : ''}`}
+                padding="sm"
+                className={`flex flex-col md:flex-row md:items-center gap-4 min-w-0 transition-shadow ${
+                  isCurrent ? 'ring-2 ring-[#0071e3]/45' : ''
+                }`}
               >
-                <div className="relative h-44 bg-slate-200">
+                {/* Left: Compact Cover Thumbnail */}
+                <div className="relative w-full h-36 md:w-44 md:h-24 rounded-2xl overflow-hidden bg-slate-200 shrink-0">
                   <img
                     src={act.coverUrl}
                     alt={act.name}
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-cover"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-900/75 via-slate-900/15 to-transparent" />
-                  <div className="absolute bottom-3.5 left-4 right-4 text-white">
-                    <div className="flex items-center justify-between gap-2 text-xs text-white/85 numeric-text">
-                      <span>{act.code}</span>
-                      <span>{act.timezone}</span>
-                    </div>
-                    <h2 className="text-lg font-semibold mt-0.5">{act.name}</h2>
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/65 via-transparent to-transparent" />
+                  <span className="absolute bottom-2 left-2.5 text-[11px] font-medium text-white/95 numeric-text">
+                    {act.code}
+                  </span>
+                </div>
+
+                {/* Middle: Key Meta & Compact Schedule */}
+                <div className="flex-1 min-w-0 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <h2 className="text-base font-semibold text-slate-900 truncate">{act.name}</h2>
+                    <StatusIndicator tone={st.tone} label={st.label} />
+                    <span className="text-xs text-slate-400">
+                      {act.defaultEntryMode === 'A_INDEPENDENT' ? '独立链接' : '统一链接'}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 date-number">
+                    <span className="inline-flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      {formatDateDisplay(act.startAt)} ~ {formatDateDisplay(act.endAt)}
+                    </span>
+                    <span className="truncate">{act.location}</span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[11px] text-slate-500 date-number">
+                    <span>登记 {formatDateDisplay(act.timeWindows.exhibitorRegisterEnd).slice(5)}</span>
+                    <span>头像 {formatDateDisplay(act.timeWindows.avatarUploadStart).slice(5)}</span>
+                    <span>领证 {formatDateDisplay(act.timeWindows.badgeClaimStart).slice(5)}</span>
+                    <span>赠票 {formatDateDisplay(act.timeWindows.giftSelfClaimEnd).slice(5)}</span>
                   </div>
                 </div>
 
-                <div className="p-5 flex-1 flex flex-col justify-between gap-4">
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <StatusIndicator tone={st.tone} label={st.label} />
-                      <span className="text-xs text-slate-500">
-                        默认入口：{act.defaultEntryMode === 'A_INDEPENDENT' ? 'A 独立链接' : 'B 活动统一链接'}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-600 date-number flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      {formatDateDisplay(act.startAt)} 至 {formatDateDisplay(act.endAt)} · {act.location}
-                    </p>
-                    <p className="text-sm text-slate-600 line-clamp-2">{act.description}</p>
-
-                    <div className="pt-2 border-t border-slate-900/[0.06] grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-slate-500 date-number">
-                      <div>登记截止：{formatDateTimeDisplay(act.timeWindows.exhibitorRegisterEnd)}</div>
-                      <div>头像开放：{formatDateTimeDisplay(act.timeWindows.avatarUploadStart)}</div>
-                      <div>领证开始：{formatDateTimeDisplay(act.timeWindows.badgeClaimStart)}</div>
-                      <div>赠票截止：{formatDateTimeDisplay(act.timeWindows.giftSelfClaimEnd)}</div>
-                    </div>
-                  </div>
-
-                  <div className="pt-3 border-t border-slate-900/[0.06] flex flex-wrap items-center justify-between gap-2">
+                {/* Right: Single-Row Action Strip */}
+                <div className="flex flex-wrap md:flex-nowrap items-center justify-end gap-1.5 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-900/[0.06]">
+                  <GlassButton
+                    size="sm"
+                    variant={isCurrent ? 'secondary' : 'primary'}
+                    onClick={() => selectActivity(act.id)}
+                  >
+                    {isCurrent ? '当前活动' : '切换'}
+                  </GlassButton>
+                  <GlassButton size="sm" variant="secondary" onClick={() => openEdit(act)}>
+                    <Edit3 className="w-3.5 h-3.5" />
+                    编辑
+                  </GlassButton>
+                  {act.status === 'active' && (
                     <GlassButton
                       size="sm"
-                      variant={isCurrent ? 'secondary' : 'primary'}
-                      onClick={() => selectActivity(act.id)}
+                      variant="ghost"
+                      onClick={() => handleStatusChange(act, 'paused')}
                     >
-                      {isCurrent ? '当前上下文' : '切换至此活动'}
+                      <PauseCircle className="w-3.5 h-3.5" />
+                      暂停
                     </GlassButton>
-                    <div className="flex items-center gap-1.5">
-                      <GlassButton size="sm" variant="secondary" onClick={() => openEdit(act)}>
-                        <Edit3 className="w-3.5 h-3.5" />
-                        编辑与排期
-                      </GlassButton>
-                      {act.status === 'active' && (
-                        <GlassButton
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleStatusChange(act, 'paused')}
-                        >
-                          <PauseCircle className="w-3.5 h-3.5" />
-                          暂停
-                        </GlassButton>
-                      )}
-                      {act.status === 'paused' && (
-                        <GlassButton
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleStatusChange(act, 'active')}
-                        >
-                          <PlayCircle className="w-3.5 h-3.5" />
-                          恢复
-                        </GlassButton>
-                      )}
-                      {act.status !== 'archived' && (
-                        <GlassButton
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleStatusChange(act, 'archived')}
-                        >
-                          <Archive className="w-3.5 h-3.5" />
-                          归档
-                        </GlassButton>
-                      )}
-                    </div>
-                  </div>
+                  )}
+                  {act.status === 'paused' && (
+                    <GlassButton
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleStatusChange(act, 'active')}
+                    >
+                      <PlayCircle className="w-3.5 h-3.5" />
+                      恢复
+                    </GlassButton>
+                  )}
+                  {act.status !== 'archived' && (
+                    <GlassButton
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleStatusChange(act, 'archived')}
+                    >
+                      <Archive className="w-3.5 h-3.5" />
+                      归档
+                    </GlassButton>
+                  )}
                 </div>
               </GlassCard>
             );
@@ -352,11 +347,9 @@ export function ActivitiesPage() {
         </div>
       )}
 
-      {/* Create / Edit Activity & Independent Time Windows Dialog */}
       <GlassDialog
         open={dialogOpen}
-        title={editing ? `编辑活动与独立时间配置：${editing.name}` : '创建新活动'}
-        subtitle="按服务器时间与活动时区独立控制每项业务的开放与截止状态"
+        title={editing ? `编辑活动：${editing.name}` : '创建新活动'}
         onClose={() => {
           setHasUnsavedChanges(false);
           setDialogOpen(false);
@@ -451,14 +444,8 @@ export function ActivitiesPage() {
             />
           </div>
 
-          {/* 7.1 Independent Business Time Windows */}
           <div className="pt-4 border-t border-slate-900/[0.08] space-y-3">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-900">独立业务时间窗口配置</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                每项业务独立判断开放与截止，到达头像补充开放时间后展商链接自动切换阶段。
-              </p>
-            </div>
+            <h3 className="text-sm font-semibold text-slate-900">业务时间窗口配置</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <GlassDatePicker
                 label="展商资料登记开始时间"
@@ -599,6 +586,6 @@ export function ActivitiesPage() {
           </div>
         </form>
       </GlassDialog>
-    </div>
+    </PageContainer>
   );
 }

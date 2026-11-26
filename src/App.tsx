@@ -3,6 +3,7 @@ import { AppProvider, useApp } from './app/providers/AppContext';
 import { GlassHeader } from './components/navigation/GlassHeader';
 import { GlobalSearchModal } from './components/navigation/GlobalSearchModal';
 import { GlassButton, OfflineBanner, ToastContainer } from './components/glass/GlassPrimitives';
+import { PageContainer } from './components/layout/PageContainer';
 import { GlassDialog } from './components/glass/GlassOverlay';
 import { LoginPage } from './features/auth/LoginPage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
@@ -80,22 +81,21 @@ function AppShell() {
       <GlassHeader />
       <main className="main-content">
         {settings?.simulateOffline && (
-          <div className="page-container">
+          <PageContainer>
             <OfflineBanner
               onReconnect={() => updateSystemSettings({ simulateOffline: false })}
             />
-          </div>
+          </PageContainer>
         )}
         {renderContent()}
       </main>
 
       <GlobalSearchModal />
 
-      {/* Unsaved Form Guard on Activity Switch (Chapter 4.1) */}
       <GlassDialog
         open={Boolean(pendingActivitySwitch)}
-        title="检测到未保存的表单内容"
-        subtitle="切换活动上下文将刷新当前页面数据，请确认是否放弃未保存修改。"
+        title="确认切换活动"
+        subtitle="当前表单有未保存修改，切换将放弃更改。"
         onClose={cancelPendingActivitySwitch}
         maxWidthClass="max-w-md"
       >

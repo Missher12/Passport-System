@@ -46,8 +46,7 @@ export function GlobalSearchModal() {
   return (
     <GlassDialog
       open={globalSearchOpen}
-      title="全局业务检索"
-      subtitle="按活动、展商摊位、人员编号或赠票编号快速跳转"
+      title="全局检索"
       onClose={() => setGlobalSearchOpen(false)}
       maxWidthClass="max-w-xl"
     >
