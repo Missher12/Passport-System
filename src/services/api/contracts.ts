@@ -20,6 +20,7 @@ import type {
   GiftTicket,
   GiftTicketStatus,
   IdType,
+  InvitedTicketMeta,
   OnsiteExtraToken,
   RealtimeEvent,
   RedemptionMode,
@@ -34,6 +35,8 @@ export interface AuthService {
   login(username: string, password: string, captchaToken?: string): Promise<{ user: SystemUser; role: RoleDefinition; isMockDemo: boolean }>;
   getCurrentSession(): Promise<{ user: SystemUser; role: RoleDefinition } | null>;
   switchDemoUser(userId: string): Promise<{ user: SystemUser; role: RoleDefinition }>;
+  updateProfile(patch: Partial<Pick<SystemUser, 'displayName' | 'email' | 'countryCode' | 'phone' | 'avatarUrl'>>): Promise<SystemUser>;
+  changePassword(currentPassword: string, newPassword: string): Promise<void>;
   logout(): Promise<void>;
 }
 
@@ -189,10 +192,31 @@ export interface TicketService {
     rows: Array<{ name: string; idType: IdType; idNumber: string; countryCode: string; phone: string }>,
     actor: SystemUser,
   ): Promise<{ created: GiftTicket[]; duplicates: string[] }>;
+  getInvitedTicketMeta(claimLinkToken: string): Promise<InvitedTicketMeta>;
   completeInvitedTicket(
     claimLinkToken: string,
-    patch: { phone: string; countryCode: string; useDate: string; avatarUrl: string },
+    input: {
+      name: string;
+      idType: IdType;
+      idNumber: string;
+      countryCode: string;
+      phone: string;
+      useDate: string;
+      avatarUrl: string;
+      customFields?: Record<string, string>;
+    },
   ): Promise<GiftTicket>;
+  retrieveByIdentity(
+    input: {
+      activityId: string;
+      name: string;
+      idType: IdType;
+      idNumber: string;
+      countryCode: string;
+      phone: string;
+    },
+    captchaToken?: string,
+  ): Promise<{ tickets: GiftTicket[]; isMockDemo: boolean }>;
   setTicketStatus(activityId: string, ticketId: string, status: GiftTicketStatus, reason: string, actor: SystemUser): Promise<GiftTicket>;
 }
 
@@ -223,6 +247,7 @@ export interface UserService {
 export interface PermissionService {
   listRoles(): Promise<RoleDefinition[]>;
   saveRole(role: Omit<RoleDefinition, 'id' | 'isPreset'> & { id?: string }, actor: SystemUser): Promise<RoleDefinition>;
+  deleteRole(roleId: string, actor: SystemUser): Promise<void>;
   listDepartments(): Promise<Department[]>;
   saveDepartment(dept: Omit<Department, 'id' | 'memberCount' | 'createdAt'> & { id?: string }, actor: SystemUser): Promise<Department>;
 }
@@ -238,7 +263,7 @@ export interface FileService {
 
 export interface AuditLogService {
   list(filters?: { activityId?: string | 'all'; action?: string | 'all'; search?: string }): Promise<AuditLogEntry[]>;
-  recordSensitiveView(activityId: string, targetLabel: string, actor: SystemUser): Promise<void>;
+  recordSensitiveView(activityId: string, targetLabel: string, actor: SystemUser, fieldName?: string): Promise<void>;
   recordDataExport(activityId: string, targetLabel: string, actor: SystemUser): Promise<void>;
 }
 

@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
+  IdCard,
   QrCode,
+  Ticket,
   WifiOff,
   XCircle,
   Zap,
@@ -10,10 +12,13 @@ import {
 import { useApp } from '../../app/providers/AppContext';
 import { PageContainer } from '../../components/layout/PageContainer';
 import {
+  AllActivityReadonlyNotice,
+  GlassBadge,
   GlassButton,
   GlassCard,
   GlassInput,
   GlassTabs,
+  GlassToolbar,
   PermissionDeniedState,
   StatusIndicator,
 } from '../../components/glass/GlassPrimitives';
@@ -45,6 +50,8 @@ const OUTCOME_LABELS: Record<
 export function RedemptionPage() {
   const {
     user,
+    role,
+    activeActivityId,
     activeActivity,
     activities,
     settings,
@@ -54,11 +61,24 @@ export function RedemptionPage() {
     refreshCore,
   } = useApp();
 
-  const currentAct = activeActivity ?? activities[0] ?? null;
+  const isAllScope = activeActivityId === 'ALL';
+  const currentAct = isAllScope ? null : (activeActivity ?? activities[0] ?? null);
+  const scopeActivityId = isAllScope ? 'ALL' : (currentAct?.id ?? '');
+
+  const canUseFastMode = Boolean(
+    user?.redemptionMode === 'fast' ||
+      role?.code === 'sys_admin' ||
+      role?.code === 'activity_admin',
+  );
+
   const [tab, setTab] = useState<'scanner' | 'records'>('scanner');
-  const [mode, setMode] = useState<RedemptionMode>(user?.redemptionMode ?? 'normal');
+  const [mode, setMode] = useState<RedemptionMode>(
+    canUseFastMode && user?.redemptionMode === 'fast' ? 'fast' : 'normal',
+  );
   const [scanInput, setScanInput] = useState('');
-  const [verifyDate, setVerifyDate] = useState('2026-11-26');
+  const [verifyDate, setVerifyDate] = useState(() =>
+    new Date(getApiClient().realtime.getNowMs()).toISOString().slice(0, 10),
+  );
   const [preview, setPreview] = useState<RedemptionPreview | null>(null);
   const [lastResult, setLastResult] = useState<RedemptionPreview | null>(null);
   const [records, setRecords] = useState<RedemptionRecord[]>([]);
@@ -85,28 +105,42 @@ export function RedemptionPage() {
     };
   }, []);
 
+  // Lock unauthorized users strictly to normal mode
+  useEffect(() => {
+    if (!canUseFastMode) {
+      setMode('normal');
+    } else if (user?.redemptionMode) {
+      setMode(user.redemptionMode);
+    }
+  }, [canUseFastMode, user?.redemptionMode]);
+
   const loadRecords = useCallback(async () => {
-    if (!currentAct) return;
+    if (!scopeActivityId) return;
     try {
-      const list = await getApiClient().redemption.listRecords(currentAct.id, recordSearch);
+      const list = await getApiClient().redemption.listRecords(scopeActivityId, recordSearch);
       setRecords(list);
     } catch {
-      setNetworkError('网络异常，核销记录加载失败。');
+      setNetworkError('核销记录加载失败。');
     }
-  }, [currentAct, recordSearch]);
-
-  useEffect(() => {
-    if (user?.redemptionMode) setMode(user.redemptionMode);
-  }, [user?.redemptionMode]);
+  }, [scopeActivityId, recordSearch]);
 
   useEffect(() => {
     loadRecords();
   }, [loadRecords, realtimeVersion]);
 
+  const activityById = useMemo(
+    () => Object.fromEntries(activities.map((a) => [a.id, a])),
+    [activities],
+  );
+
   const handleModeSwitch = async (nextMode: RedemptionMode) => {
+    if (nextMode === 'fast' && !canUseFastMode) {
+      pushToast({ tone: 'warning', title: '快速模式需管理员授权' });
+      return;
+    }
     setMode(nextMode);
     setPreview(null);
-    if (user) {
+    if (user && (role?.code === 'sys_admin' || role?.code === 'activity_admin')) {
       await getApiClient().users.setUserRedemptionMode(user.id, nextMode, user);
       await refreshCore();
     }
@@ -119,7 +153,11 @@ export function RedemptionPage() {
   const handleScanOrInspect = useCallback(
     async (codeValue?: string) => {
       const code = (codeValue ?? scanInput).trim();
-      if (!code || !user || !currentAct) return;
+      if (!code || !user) return;
+      if (isAllScope || !currentAct) {
+        pushToast({ tone: 'warning', title: '请先选择具体活动后再执行扫码核销' });
+        return;
+      }
 
       if (isOffline) {
         setNetworkError('网络已断开，无法连接服务器校验。');
@@ -132,13 +170,14 @@ export function RedemptionPage() {
       setLastResult(null);
       try {
         const api = getApiClient();
-        if (mode === 'fast') {
+        const effectiveMode: RedemptionMode = canUseFastMode ? mode : 'normal';
+        if (effectiveMode === 'fast') {
           const res = await api.redemption.confirmRedemption(
             code,
             currentAct.id,
             'fast',
             user,
-            '快速扫码工作台',
+            '快速核销端',
             verifyDate,
           );
           setPreview(null);
@@ -152,18 +191,18 @@ export function RedemptionPage() {
           }
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : '网络请求失败，请检查网络连接后重试';
+        const msg = err instanceof Error ? err.message : '核验请求失败，请重试';
         setNetworkError(msg);
-        pushToast({ tone: 'error', title: '核验请求失败', detail: msg });
+        pushToast({ tone: 'error', title: '核验失败', detail: msg });
       } finally {
         setBusy(false);
       }
     },
-    [scanInput, user, currentAct, isOffline, mode, verifyDate, loadRecords, pushToast],
+    [scanInput, user, isAllScope, currentAct, isOffline, canUseFastMode, mode, verifyDate, loadRecords, pushToast],
   );
 
   const handleConfirmNormal = async () => {
-    if (!user || !currentAct || !scanInput.trim()) return;
+    if (!user || isAllScope || !currentAct || !scanInput.trim()) return;
     if (isOffline) {
       setNetworkError('网络已断开，无法提交核销。');
       return;
@@ -176,46 +215,16 @@ export function RedemptionPage() {
         currentAct.id,
         'normal',
         user,
-        '普通扫码工作台',
+        '普通核销端',
         verifyDate,
       );
       setPreview(null);
       setLastResult(res.preview);
       await loadRecords();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '核销提交失败，请重试';
+      const msg = err instanceof Error ? err.message : '核销提交失败';
       setNetworkError(msg);
       pushToast({ tone: 'error', title: '核销失败', detail: msg });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleConcurrentDemo = async () => {
-    if (!user || !currentAct) return;
-    if (isOffline) {
-      setNetworkError('网络已断开，无法执行核验。');
-      return;
-    }
-    const code = scanInput.trim() || 'A01-01';
-    setBusy(true);
-    setNetworkError(null);
-    try {
-      const api = getApiClient();
-      const [r1, r2] = await Promise.all([
-        api.redemption.confirmRedemption(code, currentAct.id, 'fast', user, '并发终端 A', verifyDate),
-        api.redemption.confirmRedemption(code, currentAct.id, 'fast', user, '并发终端 B', verifyDate),
-      ]);
-      const successes = [r1, r2].filter((r) => r.record.outcome === 'success').length;
-      const blocked = [r1, r2].filter((r) => r.record.outcome !== 'success').length;
-      setLastResult(r2.preview);
-      pushToast({
-        tone: 'info',
-        title: `并发防重验证：成功 ${successes} 次，拦截 ${blocked} 次`,
-      });
-      await loadRecords();
-    } catch (err) {
-      setNetworkError(err instanceof Error ? err.message : '并发验证请求失败');
     } finally {
       setBusy(false);
     }
@@ -229,26 +238,46 @@ export function RedemptionPage() {
     );
   }
 
-  if (!currentAct) return null;
+  if (!isAllScope && !currentAct) return null;
 
   const recordColumns: GlassTableColumn<RedemptionRecord>[] = [
+    ...(isAllScope
+      ? [
+          {
+            key: 'activity',
+            header: '所属活动',
+            render: (r: RedemptionRecord) => (
+              <span className="text-xs text-slate-600">
+                {activityById[r.activityId]?.name ?? r.activityId}
+              </span>
+            ),
+          },
+        ]
+      : []),
     {
       key: 'time',
       header: '核销时间',
       sortable: true,
       sortValue: (r) => r.createdAt,
-      render: (r) => <span className="date-number text-xs">{formatDateTimeDisplay(r.createdAt)}</span>,
+      render: (r) => (
+        <span className="date-number text-xs">{formatDateTimeDisplay(r.createdAt)}</span>
+      ),
+    },
+    {
+      key: 'kind',
+      header: '业务类型',
+      render: (r) => (
+        <GlassBadge
+          label={r.credentialKind === 'certificate' ? '工作证件核验' : '赠票入场核销'}
+          color={r.credentialKind === 'certificate' ? '#0071e3' : '#7c3aed'}
+        />
+      ),
     },
     {
       key: 'code',
       header: '凭证编号',
       render: (r) => (
-        <div>
-          <span className="order-number font-semibold text-[#0071e3] mr-2">{r.displayCode}</span>
-          <span className="text-xs text-slate-500">
-            {r.credentialKind === 'certificate' ? '证件' : '赠票'}
-          </span>
-        </div>
+        <span className="order-number font-semibold text-[#0071e3]">{r.displayCode}</span>
       ),
     },
     {
@@ -263,10 +292,10 @@ export function RedemptionPage() {
     },
     {
       key: 'mode',
-      header: '核销模式',
+      header: '模式 / 操作员',
       render: (r) => (
         <span className="text-xs text-slate-700">
-          {r.mode === 'fast' ? '快速模式' : '普通模式'} · {r.operatorName}
+          {r.mode === 'fast' ? '快速' : '普通'} · {r.operatorName}
         </span>
       ),
     },
@@ -285,30 +314,40 @@ export function RedemptionPage() {
     },
   ];
 
+  const isCertificatePreview = preview?.credentialKind === 'certificate';
+
   return (
     <PageContainer className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {isAllScope && <AllActivityReadonlyNotice />}
+
+      <GlassToolbar>
         <GlassTabs
+          variant="embedded"
           value={tab}
           onChange={setTab}
           tabs={[
-            { id: 'scanner', label: '扫码工作台' },
-            { id: 'records', label: '核销记录', count: records.length },
+            { id: 'scanner', label: '扫码' },
+            { id: 'records', label: '核销记录' },
           ]}
         />
-        <GlassTabs
-          value={mode}
-          onChange={handleModeSwitch}
-          tabs={[
-            { id: 'normal', label: '普通模式' },
-            { id: 'fast', label: '快速模式' },
-          ]}
-        />
-      </div>
+        {canUseFastMode ? (
+          <GlassTabs
+            value={mode}
+            onChange={handleModeSwitch}
+            tabs={[
+              { id: 'normal', label: '普通模式' },
+              { id: 'fast', label: '快速模式' },
+            ]}
+          />
+        ) : (
+          <span className="text-xs font-medium text-slate-600 px-3 py-1.5 rounded-full bg-slate-900/[0.04]">
+            普通模式
+          </span>
+        )}
+      </GlassToolbar>
 
       {tab === 'scanner' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Left: Real Camera QR Scanner + Manual Fallback */}
           <GlassCard className="lg:col-span-7 min-w-0 space-y-4">
             <div className="flex items-center justify-between gap-2">
               <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
@@ -319,13 +358,11 @@ export function RedemptionPage() {
                 )}
                 {mode === 'fast' ? '快速自动核销' : '普通人工确认'}
               </h2>
-              {settings?.adapterMode === 'mock' && (
-                <StatusIndicator tone="warning" label="演示模式" />
-              )}
             </div>
 
             <GlassScanner
               offline={isOffline}
+              lockedReason={isAllScope ? '请先在顶部选择具体活动' : undefined}
               busy={busy}
               onDetected={(code) => handleScanOrInspect(code)}
               onScanError={(msg) => pushToast({ tone: 'warning', title: msg })}
@@ -341,7 +378,6 @@ export function RedemptionPage() {
               </div>
             )}
 
-            {/* Manual Input Fallback */}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -356,7 +392,7 @@ export function RedemptionPage() {
                     numeric
                     value={scanInput}
                     onChange={(e) => setScanInput(e.target.value)}
-                    placeholder="输入 A01-01 / GT2027010001 / DYN-..."
+                    placeholder="输入证件编号、赠票编号或动态码"
                   />
                 </div>
                 <GlassInput
@@ -368,55 +404,18 @@ export function RedemptionPage() {
                 />
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                <GlassButton
-                  type="submit"
-                  variant="primary"
-                  loading={busy}
-                  disabled={isOffline}
-                  className="flex-1"
-                >
-                  {mode === 'fast' ? '核验并核销' : '查询凭证'}
-                </GlassButton>
-                <GlassButton
-                  variant="secondary"
-                  loading={busy}
-                  disabled={isOffline}
-                  onClick={handleConcurrentDemo}
-                >
-                  并发防重验证
-                </GlassButton>
-              </div>
+              <GlassButton
+                type="submit"
+                variant="primary"
+                loading={busy}
+                disabled={isOffline || isAllScope}
+                className="w-full"
+              >
+                {mode === 'fast' ? '核验并核销' : '查询凭证'}
+              </GlassButton>
             </form>
-
-            {settings?.adapterMode === 'mock' && (
-              <div className="pt-3 border-t border-slate-900/[0.07] space-y-2">
-                <p className="text-xs font-medium text-slate-500">演示快捷编号</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    { code: 'GT2027010001', label: '有效赠票 GT2027010001' },
-                    { code: 'A01-02', label: '有效证件 A01-02' },
-                    { code: 'GT2027010003', label: '重复票 GT2027010003' },
-                    { code: 'C15-01', label: '冻结证件 C15-01' },
-                    { code: 'GT2027010002', label: '日期不符 GT2027010002' },
-                    { code: 'DYN-GIFT.EXPIRED.0000', label: '过期码' },
-                  ].map((sample) => (
-                    <button
-                      key={sample.code}
-                      type="button"
-                      disabled={isOffline}
-                      onClick={() => handleScanOrInspect(sample.code)}
-                      className="px-2.5 py-1.5 rounded-xl text-xs bg-white/65 hover:bg-white border border-slate-900/[0.08] text-slate-700 cursor-pointer numeric-text transition-colors disabled:opacity-50"
-                    >
-                      {sample.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </GlassCard>
 
-          {/* Right: Live Verification Preview & Outcome */}
           <div className="lg:col-span-5 min-w-0 space-y-4">
             {isOffline ? (
               <GlassCard className="border-red-300 bg-red-50/75 text-center py-10 space-y-2.5">
@@ -427,7 +426,19 @@ export function RedemptionPage() {
             ) : preview && preview.valid ? (
               <GlassCard elevated className="space-y-5">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-[#0071e3]">待确认放行</span>
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0071e3]">
+                    {isCertificatePreview ? (
+                      <>
+                        <IdCard className="w-3.5 h-3.5" />
+                        工作证件核验
+                      </>
+                    ) : (
+                      <>
+                        <Ticket className="w-3.5 h-3.5" />
+                        赠票入场核销
+                      </>
+                    )}
+                  </span>
                   <StatusIndicator tone="info" label={preview.statusLabel ?? '有效'} />
                 </div>
 
@@ -468,7 +479,7 @@ export function RedemptionPage() {
                     className="flex-1"
                   >
                     <CheckCircle2 className="w-4 h-4" />
-                    确认核销
+                    {isCertificatePreview ? '确认核验放行' : '确认核销入场'}
                   </GlassButton>
                   <GlassButton variant="secondary" size="lg" onClick={() => setPreview(null)}>
                     取消
@@ -489,7 +500,8 @@ export function RedemptionPage() {
                 <div className="flex items-center gap-3">
                   {lastResult.outcome === 'success' ? (
                     <CheckCircle2 className="w-8 h-8 text-[#15803d] shrink-0" />
-                  ) : lastResult.outcome === 'date_mismatch' || lastResult.outcome === 'expired' ? (
+                  ) : lastResult.outcome === 'date_mismatch' ||
+                    lastResult.outcome === 'expired' ? (
                     <AlertTriangle className="w-8 h-8 text-[#b45309] shrink-0" />
                   ) : (
                     <XCircle className="w-8 h-8 text-[#b91c1c] shrink-0" />
@@ -520,16 +532,15 @@ export function RedemptionPage() {
                           {lastResult.displayCode}
                         </span>
                       </div>
-                      <div className="text-slate-600 truncate">{lastResult.categoryOrBatch}</div>
+                      <div className="text-slate-600 truncate">
+                        {lastResult.credentialKind === 'certificate' ? '工作证件' : '赠票'} ·{' '}
+                        {lastResult.categoryOrBatch}
+                      </div>
                       <div className="text-slate-500 date-number">
                         有效日期：{lastResult.validDateLabel}
                       </div>
                     </div>
                   </div>
-                )}
-
-                {lastResult.isMockDemo && (
-                  <p className="text-[11px] text-amber-700">演示结果（Mock 模式）</p>
                 )}
               </GlassCard>
             ) : (

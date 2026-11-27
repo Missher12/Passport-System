@@ -1,14 +1,26 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ExternalLink, Plus, QrCode, Upload } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  Edit3,
+  ExternalLink,
+  Plus,
+  QrCode,
+  Trash2,
+  Upload,
+} from 'lucide-react';
 import { useApp } from '../../app/providers/AppContext';
 import {
+  AllActivityReadonlyNotice,
   GlassButton,
   GlassCard,
   GlassDatePicker,
   GlassInput,
   GlassSelect,
   GlassTabs,
+  GlassToolbar,
   PermissionDeniedState,
+  SensitiveFieldCell,
   StatusIndicator,
 } from '../../components/glass/GlassPrimitives';
 import { GlassDialog, GlassUpload } from '../../components/glass/GlassOverlay';
@@ -26,19 +38,100 @@ import {
   maskPhone,
   parseIdTypeInput,
 } from '../../utils/stateMachines';
-import type { GiftBatch, GiftTicket, GiftTicketStatus, IdType } from '../../types/domain';
+import type {
+  CustomFieldDefinition,
+  CustomFieldType,
+  GiftBatch,
+  GiftTicket,
+  GiftTicketStatus,
+  IdType,
+} from '../../types/domain';
+
+const COUNTRY_CODE_OPTIONS = COUNTRY_CODES.map((c) => ({
+  value: c.code,
+  label: `${c.code} ${c.label}`,
+  shortLabel: c.code,
+}));
+
+const CUSTOM_FIELD_TYPE_OPTIONS: Array<{ value: CustomFieldType; label: string }> = [
+  { value: 'text', label: '单行文本' },
+  { value: 'textarea', label: '多行文本' },
+  { value: 'radio', label: '单选' },
+  { value: 'checkbox', label: '多选' },
+  { value: 'select', label: '下拉选择' },
+  { value: 'date', label: '日期' },
+  { value: 'number', label: '数字' },
+];
+
+interface EditableCustomField {
+  id: string;
+  label: string;
+  type: CustomFieldType;
+  required: boolean;
+  placeholder: string;
+  optionsText: string;
+}
+
+function toEditableFields(fields: CustomFieldDefinition[]): EditableCustomField[] {
+  return fields.map((f) => ({
+    id: f.id,
+    label: f.label,
+    type: f.type ?? 'text',
+    required: Boolean(f.required),
+    placeholder: f.placeholder ?? '',
+    optionsText: (f.options ?? []).join(', '),
+  }));
+}
+
+function fromEditableFields(fields: EditableCustomField[]): CustomFieldDefinition[] {
+  return fields
+    .filter((f) => f.label.trim().length > 0)
+    .map((f) => {
+      const needsOptions = f.type === 'radio' || f.type === 'checkbox' || f.type === 'select';
+      const options = needsOptions
+        ? f.optionsText
+            .split(/[,，\n]/)
+            .map((o) => o.trim())
+            .filter(Boolean)
+        : undefined;
+      return {
+        id: f.id,
+        label: f.label.trim(),
+        type: f.type,
+        required: f.required,
+        placeholder: f.placeholder.trim() || undefined,
+        options,
+      };
+    });
+}
 
 function giftTone(status: GiftTicketStatus) {
-  if (status === 'valid' || status === 'generated' || status === 'redeemed') return 'success' as const;
-  if (status === 'voided' || status === 'expired' || status === 'frozen') return 'danger' as const;
+  if (status === 'valid' || status === 'generated' || status === 'redeemed') {
+    return 'success' as const;
+  }
+  if (status === 'voided' || status === 'expired' || status === 'frozen') {
+    return 'danger' as const;
+  }
   return 'warning' as const;
 }
 
 export function GiftsPage() {
-  const { user, activeActivity, activities, realtimeVersion, canAccessModule, switchPortal, pushToast } =
-    useApp();
+  const {
+    user,
+    role,
+    activeActivityId,
+    activeActivity,
+    activities,
+    realtimeVersion,
+    canAccessModule,
+    switchPortal,
+    pushToast,
+  } = useApp();
 
-  const currentAct = activeActivity ?? activities[0] ?? null;
+  const isAllScope = activeActivityId === 'ALL';
+  const currentAct = isAllScope ? null : (activeActivity ?? activities[0] ?? null);
+  const scopeActivityId = isAllScope ? 'ALL' : (currentAct?.id ?? '');
+
   const [tab, setTab] = useState<'batches' | 'backend_issue' | 'tickets'>('batches');
   const [batches, setBatches] = useState<GiftBatch[]>([]);
   const [tickets, setTickets] = useState<GiftTicket[]>([]);
@@ -46,16 +139,19 @@ export function GiftsPage() {
   const [ticketSearch, setTicketSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<GiftTicketStatus | 'all'>('all');
   const [previewTicket, setPreviewTicket] = useState<GiftTicket | null>(null);
+  const [revealedFields, setRevealedFields] = useState<Record<string, boolean>>({});
 
-  // Create Batch modal
+  // Create / Edit Batch modal
   const [batchModalOpen, setBatchModalOpen] = useState(false);
-  const [newBatch, setNewBatch] = useState({
+  const [editingBatchId, setEditingBatchId] = useState<string | null>(null);
+  const [batchForm, setBatchForm] = useState({
     name: '',
     totalQuota: '100',
     openAt: '2026-11-20T10:00',
     closeAt: '2026-12-01T20:00',
     datesText: '2026-11-26, 2026-11-27, 2026-11-28',
     enabled: true,
+    customFields: [] as EditableCustomField[],
   });
 
   // Backend direct issue form
@@ -75,18 +171,21 @@ export function GiftsPage() {
   // Backend CSV import
   const [importBatchName, setImportBatchName] = useState('后台合作方邀请名单');
   const [importUseDate, setImportUseDate] = useState('2026-11-26');
-  const [importCsv, setImportCsv] = useState(
-    '姓名,证件类型,证件号码,国际区号,联系电话\n林致远,居民身份证,440106199403180045,+86,13600136099',
-  );
+  const [importCsv, setImportCsv] = useState('姓名,证件类型,证件号码,国际区号,联系电话\n');
+
+  useEffect(() => {
+    setRevealedFields({});
+    return () => setRevealedFields({});
+  }, [scopeActivityId, user?.id]);
 
   const loadData = async () => {
-    if (!currentAct) return;
+    if (!scopeActivityId) return;
     setLoading(true);
     try {
       const api = getApiClient();
       const [b, t] = await Promise.all([
-        api.gifts.listBatches(currentAct.id),
-        api.tickets.listTickets(currentAct.id),
+        api.gifts.listBatches(scopeActivityId),
+        api.tickets.listTickets(scopeActivityId),
       ]);
       setBatches(b);
       setTickets(t);
@@ -97,7 +196,12 @@ export function GiftsPage() {
 
   useEffect(() => {
     loadData();
-  }, [currentAct?.id, realtimeVersion]);
+  }, [scopeActivityId, realtimeVersion]);
+
+  const activityById = useMemo(
+    () => Object.fromEntries(activities.map((a) => [a.id, a])),
+    [activities],
+  );
 
   const filteredTickets = useMemo(() => {
     return tickets.filter((t) => {
@@ -123,52 +227,176 @@ export function GiftsPage() {
     );
   }
 
-  if (!currentAct) return null;
+  if (!isAllScope && !currentAct) return null;
 
-  const handleCreateBatch = async (e: React.FormEvent) => {
+  const canRevealSensitive = Boolean(role?.canViewUnmaskedSensitive);
+
+  const toggleFieldReveal = async (
+    fieldKey: string,
+    activityId: string,
+    targetLabel: string,
+    fieldName: string,
+  ) => {
+    if (revealedFields[fieldKey]) {
+      setRevealedFields((prev) => ({ ...prev, [fieldKey]: false }));
+      return;
+    }
+    if (!canRevealSensitive) {
+      pushToast({ tone: 'warning', title: '当前角色无明文查看权限' });
+      return;
+    }
+    if (user) {
+      await getApiClient().auditLogs.recordSensitiveView(
+        activityId,
+        targetLabel,
+        user,
+        fieldName,
+      );
+    }
+    setRevealedFields((prev) => ({ ...prev, [fieldKey]: true }));
+  };
+
+  const openCreateBatchModal = () => {
+    setEditingBatchId(null);
+    setBatchForm({
+      name: '',
+      totalQuota: '100',
+      openAt: '2026-11-20T10:00',
+      closeAt: '2026-12-01T20:00',
+      datesText: '2026-11-26, 2026-11-27, 2026-11-28',
+      enabled: true,
+      customFields: [],
+    });
+    setBatchModalOpen(true);
+  };
+
+  const openEditBatchModal = (b: GiftBatch) => {
+    setEditingBatchId(b.id);
+    setBatchForm({
+      name: b.name,
+      totalQuota: String(b.totalQuota),
+      openAt: b.openAt.slice(0, 16),
+      closeAt: b.closeAt.slice(0, 16),
+      datesText: b.availableDates.join(', '),
+      enabled: b.enabled,
+      customFields: toEditableFields(b.customFields),
+    });
+    setBatchModalOpen(true);
+  };
+
+  const addCustomFieldRow = () => {
+    setBatchForm((prev) => ({
+      ...prev,
+      customFields: [
+        ...prev.customFields,
+        {
+          id: `cf_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+          label: '',
+          type: 'text',
+          required: false,
+          placeholder: '',
+          optionsText: '',
+        },
+      ],
+    }));
+  };
+
+  const updateCustomFieldRow = (
+    idx: number,
+    patch: Partial<EditableCustomField>,
+  ) => {
+    setBatchForm((prev) => ({
+      ...prev,
+      customFields: prev.customFields.map((f, i) => (i === idx ? { ...f, ...patch } : f)),
+    }));
+  };
+
+  const moveCustomFieldRow = (idx: number, delta: -1 | 1) => {
+    setBatchForm((prev) => {
+      const next = [...prev.customFields];
+      const target = idx + delta;
+      if (target < 0 || target >= next.length) return prev;
+      const [item] = next.splice(idx, 1);
+      next.splice(target, 0, item);
+      return { ...prev, customFields: next };
+    });
+  };
+
+  const removeCustomFieldRow = (idx: number) => {
+    setBatchForm((prev) => ({
+      ...prev,
+      customFields: prev.customFields.filter((_, i) => i !== idx),
+    }));
+  };
+
+  const handleSaveBatch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user || !currentAct) return;
     try {
-      const availableDates = newBatch.datesText
+      const availableDates = batchForm.datesText
         .split(/[,，\n]/)
         .map((d) => d.trim())
         .filter(Boolean);
-      const created = await getApiClient().gifts.createBatch(
-        {
-          activityId: currentAct.id,
-          name: newBatch.name,
-          totalQuota: Number.parseInt(newBatch.totalQuota, 10) || 10,
-          openAt: newBatch.openAt,
-          closeAt: newBatch.closeAt,
-          availableDates,
-          customFields: [],
-          enabled: newBatch.enabled,
-        },
-        user,
+      const customFields = fromEditableFields(batchForm.customFields);
+      const needsMissingOption = customFields.find(
+        (f) =>
+          (f.type === 'radio' || f.type === 'checkbox' || f.type === 'select') &&
+          (!f.options || f.options.length === 0),
       );
+      if (needsMissingOption) {
+        pushToast({
+          tone: 'error',
+          title: `字段「${needsMissingOption.label}」至少需要配置 1 个选项`,
+        });
+        return;
+      }
+
+      if (editingBatchId) {
+        await getApiClient().gifts.updateBatch(
+          currentAct.id,
+          editingBatchId,
+          {
+            name: batchForm.name,
+            totalQuota: Number.parseInt(batchForm.totalQuota, 10) || 10,
+            openAt: batchForm.openAt,
+            closeAt: batchForm.closeAt,
+            availableDates,
+            customFields,
+            enabled: batchForm.enabled,
+          },
+          user,
+        );
+        pushToast({ tone: 'success', title: `批次「${batchForm.name}」已更新` });
+      } else {
+        const created = await getApiClient().gifts.createBatch(
+          {
+            activityId: currentAct.id,
+            name: batchForm.name,
+            totalQuota: Number.parseInt(batchForm.totalQuota, 10) || 10,
+            openAt: batchForm.openAt,
+            closeAt: batchForm.closeAt,
+            availableDates,
+            customFields,
+            enabled: batchForm.enabled,
+          },
+          user,
+        );
+        pushToast({
+          tone: 'success',
+          title: `批次「${created.name}」已创建`,
+          detail: `分享码：${created.shareCode}`,
+        });
+      }
       setBatchModalOpen(false);
-      setNewBatch({
-        name: '',
-        totalQuota: '100',
-        openAt: '2026-11-20T10:00',
-        closeAt: '2026-12-01T20:00',
-        datesText: '2026-11-26, 2026-11-27',
-        enabled: true,
-      });
-      pushToast({
-        tone: 'success',
-        title: `自助赠票批次「${created.name}」已创建`,
-        detail: `分享码：${created.shareCode}（演示结果）`,
-      });
       await loadData();
     } catch (err) {
-      pushToast({ tone: 'error', title: err instanceof Error ? err.message : '创建失败' });
+      pushToast({ tone: 'error', title: err instanceof Error ? err.message : '保存失败' });
     }
   };
 
   const handleDirectIssue = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user || !currentAct) return;
     setDuplicateWarning(null);
     try {
       const res = await getApiClient().tickets.backendDirectIssue(
@@ -180,10 +408,7 @@ export function GiftsPage() {
       );
       pushToast({
         tone: 'success',
-        title: `已生成独立赠票 ${res.ticket.ticketCode}`,
-        detail: res.duplicateDetected
-          ? '已通过授权增发独立一票一码（演示结果）'
-          : '赠票凭证已生效，可立即核验或分享（演示结果）',
+        title: `已生成赠票 ${res.ticket.ticketCode}`,
       });
       setDirectForm({
         ...directForm,
@@ -194,7 +419,7 @@ export function GiftsPage() {
       });
       await loadData();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '发票失败';
+      const msg = err instanceof Error ? err.message : '发放失败';
       if (msg.startsWith('DUPLICATE_IDENTITY:')) {
         setDuplicateWarning(msg.replace('DUPLICATE_IDENTITY:', ''));
       } else {
@@ -204,7 +429,7 @@ export function GiftsPage() {
   };
 
   const handleBackendImport = async () => {
-    if (!user) return;
+    if (!user || !currentAct) return;
     const lines = importCsv
       .split(/\r?\n/)
       .map((l) => l.trim())
@@ -237,38 +462,91 @@ export function GiftsPage() {
     );
     pushToast({
       tone: 'success',
-      title: `批量生成 ${res.created.length} 个专属赠票登记链接`,
+      title: `已生成 ${res.created.length} 个受邀登记链接`,
       detail:
         res.duplicates.length > 0
-          ? `自动拦截重复身份 ${res.duplicates.length} 条：${res.duplicates.join('；')}`
-          : '受邀人打开专属链接补充自拍后即可生成电子赠票（演示结果）',
+          ? `已拦截重复身份 ${res.duplicates.length} 条`
+          : undefined,
     });
     await loadData();
   };
 
   const ticketColumns: GlassTableColumn<GiftTicket>[] = [
+    ...(isAllScope
+      ? [
+          {
+            key: 'activity',
+            header: '所属活动',
+            render: (t: GiftTicket) => (
+              <span className="text-xs text-slate-600">
+                {activityById[t.activityId]?.name ?? t.activityId}
+              </span>
+            ),
+          },
+        ]
+      : []),
     {
       key: 'code',
-      header: '票务编号（一票一码）',
+      header: '票务编号',
       sortable: true,
       sortValue: (t) => t.ticketCode,
-      render: (t) => <span className="order-number font-semibold text-[#0071e3]">{t.ticketCode}</span>,
+      render: (t) => (
+        <span className="order-number font-semibold text-[#0071e3]">{t.ticketCode}</span>
+      ),
     },
     {
       key: 'holder',
-      header: '持票人与身份',
+      header: '持票人',
+      render: (t) => <span className="font-medium text-slate-900">{t.name}</span>,
+    },
+    {
+      key: 'idNumber',
+      header: '证件号码',
       render: (t) => (
         <div className="text-xs space-y-0.5">
-          <div className="font-medium text-slate-900">{t.name}</div>
-          <div className="text-slate-500 numeric-text">
-            {ID_TYPE_LABELS[t.idType]} · {maskIdNumber(t.idNumber)} · {maskPhone(t.countryCode, t.phone)}
-          </div>
+          <div className="text-slate-400">{ID_TYPE_LABELS[t.idType]}</div>
+          <SensitiveFieldCell
+            maskedValue={maskIdNumber(t.idNumber, false)}
+            rawValue={t.idNumber}
+            revealed={Boolean(revealedFields[`gt:${t.id}:id`])}
+            canReveal={canRevealSensitive}
+            fieldLabel={`${t.ticketCode} 证件号码`}
+            onToggle={() =>
+              toggleFieldReveal(
+                `gt:${t.id}:id`,
+                t.activityId,
+                `${t.ticketCode} ${t.name}`,
+                '证件号码',
+              )
+            }
+          />
         </div>
       ),
     },
     {
+      key: 'phone',
+      header: '联系电话',
+      render: (t) => (
+        <SensitiveFieldCell
+          maskedValue={maskPhone(t.countryCode, t.phone, false)}
+          rawValue={`${t.countryCode} ${t.phone}`}
+          revealed={Boolean(revealedFields[`gt:${t.id}:phone`])}
+          canReveal={canRevealSensitive}
+          fieldLabel={`${t.ticketCode} 联系电话`}
+          onToggle={() =>
+            toggleFieldReveal(
+              `gt:${t.id}:phone`,
+              t.activityId,
+              `${t.ticketCode} ${t.name}`,
+              '联系电话',
+            )
+          }
+        />
+      ),
+    },
+    {
       key: 'batch',
-      header: '来源批次 / 模式',
+      header: '来源批次',
       render: (t) => (
         <div className="text-xs">
           <div className="font-medium text-slate-800">{t.batchName}</div>
@@ -276,23 +554,25 @@ export function GiftsPage() {
             {t.mode === 'self_claim'
               ? '自助领票'
               : t.mode === 'backend_import'
-                ? '后台导入专属链接'
-                : '后台直接录入'}
+                ? '受邀链接'
+                : '后台发放'}
           </div>
         </div>
       ),
     },
     {
       key: 'date',
-      header: '限定使用日期',
+      header: '使用日期',
       sortable: true,
       sortValue: (t) => t.useDate,
       render: (t) => <span className="date-number font-medium text-slate-800">{t.useDate}</span>,
     },
     {
       key: 'status',
-      header: '票据状态',
-      render: (t) => <StatusIndicator tone={giftTone(t.status)} label={GIFT_STATUS_LABELS[t.status]} />,
+      header: '状态',
+      render: (t) => (
+        <StatusIndicator tone={giftTone(t.status)} label={GIFT_STATUS_LABELS[t.status]} />
+      ),
     },
     {
       key: 'actions',
@@ -307,19 +587,19 @@ export function GiftsPage() {
               onClick={() => switchPortal('gift', { invitedGiftToken: t.claimLinkToken })}
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              去补全资料
+              邀请页
             </GlassButton>
           )}
           <GlassButton size="sm" variant="secondary" onClick={() => setPreviewTicket(t)}>
             <QrCode className="w-3.5 h-3.5" />
-            电子赠票
+            凭证
           </GlassButton>
-          {t.status === 'valid' && (
+          {!isAllScope && t.status === 'valid' && (
             <GlassButton
               size="sm"
               variant="ghost"
               onClick={async () => {
-                if (!user) return;
+                if (!user || !currentAct) return;
                 await getApiClient().tickets.setTicketStatus(
                   currentAct.id,
                   t.id,
@@ -341,37 +621,48 @@ export function GiftsPage() {
 
   return (
     <PageContainer className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {isAllScope && <AllActivityReadonlyNotice />}
+
+      <GlassToolbar>
         <GlassTabs
+          variant="embedded"
           value={tab}
           onChange={setTab}
           tabs={[
-            { id: 'batches', label: '自助批次', count: batches.length },
+            { id: 'batches', label: '自助批次' },
             { id: 'backend_issue', label: '后台发放' },
-            { id: 'tickets', label: '赠票名单', count: tickets.length },
+            { id: 'tickets', label: '赠票名单' },
           ]}
         />
         <div className="flex items-center gap-2">
-          <GlassButton variant="secondary" onClick={() => switchPortal('gift')}>
-            <ExternalLink className="w-4 h-4" />
-            外部领票端
+          <GlassButton size="sm" variant="secondary" onClick={() => switchPortal('gift')}>
+            <ExternalLink className="w-3.5 h-3.5" />
+            领票页
           </GlassButton>
-          <GlassButton variant="primary" onClick={() => setBatchModalOpen(true)}>
+          <GlassButton
+            size="sm"
+            variant="primary"
+            disabled={isAllScope}
+            onClick={openCreateBatchModal}
+          >
             <Plus className="w-4 h-4" />
-            新建赠票批次
+            新建批次
           </GlassButton>
         </div>
-      </div>
+      </GlassToolbar>
 
       {tab === 'batches' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {batches.map((b) => (
             <GlassCard key={b.id} className="space-y-4 min-w-0">
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-semibold text-slate-900">{b.name}</h2>
+                <div className="min-w-0">
+                  <h2 className="text-base font-semibold text-slate-900 truncate">{b.name}</h2>
                   <p className="text-xs text-slate-500 mt-0.5 numeric-text">
-                    分享码：{b.shareCode} · 可选日期：{b.availableDates.join('、')}
+                    {isAllScope && activityById[b.activityId]
+                      ? `${activityById[b.activityId].name} · `
+                      : ''}
+                    分享码：{b.shareCode} · 日期：{b.availableDates.join('、')}
                   </p>
                 </div>
                 <StatusIndicator
@@ -383,20 +674,29 @@ export function GiftsPage() {
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs text-slate-600 numeric-text">
                   <span>已领取 {b.claimedCount} 张</span>
-                  <span>总配额 {b.totalQuota} 张</span>
+                  <span>配额 {b.totalQuota} 张</span>
                 </div>
                 <div className="h-2 rounded-full bg-slate-900/[0.07] overflow-hidden">
                   <div
                     className="h-full bg-[#0071e3]"
                     style={{
-                      width: `${Math.min(100, Math.round((b.claimedCount / Math.max(1, b.totalQuota)) * 100))}%`,
+                      width: `${
+                        b.totalQuota > 0
+                          ? Math.min(100, Math.round((b.claimedCount / b.totalQuota) * 100))
+                          : 0
+                      }%`,
                     }}
                   />
                 </div>
               </div>
 
-              <div className="text-xs text-slate-500 date-number">
-                开放窗口：{formatDateTimeDisplay(b.openAt)} 至 {formatDateTimeDisplay(b.closeAt)}
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 date-number">
+                <span>
+                  {formatDateTimeDisplay(b.openAt)} ~ {formatDateTimeDisplay(b.closeAt)}
+                </span>
+                <span className="numeric-text">
+                  自定义字段：{b.customFields.length} 项
+                </span>
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-900/[0.06]">
@@ -406,24 +706,36 @@ export function GiftsPage() {
                   onClick={() => switchPortal('gift', { giftBatchId: b.id })}
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  体验此批次自助领票
+                  打开领票页
                 </GlassButton>
-                <GlassButton
-                  size="sm"
-                  variant="secondary"
-                  onClick={async () => {
-                    if (!user) return;
-                    await getApiClient().gifts.updateBatch(
-                      currentAct.id,
-                      b.id,
-                      { enabled: !b.enabled },
-                      user,
-                    );
-                    await loadData();
-                  }}
-                >
-                  {b.enabled ? '停用批次' : '重新启用'}
-                </GlassButton>
+                {!isAllScope && currentAct && (
+                  <div className="flex items-center gap-1.5">
+                    <GlassButton
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => openEditBatchModal(b)}
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      配置字段
+                    </GlassButton>
+                    <GlassButton
+                      size="sm"
+                      variant="ghost"
+                      onClick={async () => {
+                        if (!user) return;
+                        await getApiClient().gifts.updateBatch(
+                          currentAct.id,
+                          b.id,
+                          { enabled: !b.enabled },
+                          user,
+                        );
+                        await loadData();
+                      }}
+                    >
+                      {b.enabled ? '停用' : '启用'}
+                    </GlassButton>
+                  </div>
+                )}
               </div>
             </GlassCard>
           ))}
@@ -432,13 +744,12 @@ export function GiftsPage() {
 
       {tab === 'backend_issue' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Direct Issue */}
           <GlassCard className="lg:col-span-7 space-y-4 min-w-0">
             <h2 className="text-base font-semibold text-slate-900">后台直接发放</h2>
             <form onSubmit={handleDirectIssue} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <GlassInput
-                  label="发放批次 / 渠道备注"
+                  label="批次名称"
                   required
                   value={directForm.batchName}
                   onChange={(e) => setDirectForm({ ...directForm, batchName: e.target.value })}
@@ -452,7 +763,9 @@ export function GiftsPage() {
                 <GlassSelect
                   label="证件类型"
                   value={directForm.idType}
-                  onChange={(e) => setDirectForm({ ...directForm, idType: e.target.value as IdType })}
+                  onValueChange={(val) =>
+                    setDirectForm({ ...directForm, idType: val as IdType })
+                  }
                   options={Object.entries(ID_TYPE_LABELS).map(([v, l]) => ({ value: v, label: l }))}
                 />
                 <GlassInput
@@ -462,27 +775,24 @@ export function GiftsPage() {
                   value={directForm.idNumber}
                   onChange={(e) => setDirectForm({ ...directForm, idNumber: e.target.value })}
                 />
-                <div className="grid grid-cols-5 gap-2">
-                  <div className="col-span-2">
-                    <GlassSelect
-                      label="区号"
-                      value={directForm.countryCode}
-                      onChange={(e) => setDirectForm({ ...directForm, countryCode: e.target.value })}
-                      options={COUNTRY_CODES.map((c) => ({ value: c.code, label: c.code }))}
-                    />
-                  </div>
-                  <div className="col-span-3">
-                    <GlassInput
-                      label="联系电话"
-                      required
-                      numeric
-                      value={directForm.phone}
-                      onChange={(e) => setDirectForm({ ...directForm, phone: e.target.value })}
-                    />
-                  </div>
+                <div className="grid grid-cols-[120px_1fr] gap-2">
+                  <GlassSelect
+                    label="区号"
+                    searchable
+                    value={directForm.countryCode}
+                    onValueChange={(val) => setDirectForm({ ...directForm, countryCode: val })}
+                    options={COUNTRY_CODE_OPTIONS}
+                  />
+                  <GlassInput
+                    label="联系电话"
+                    required
+                    numeric
+                    value={directForm.phone}
+                    onChange={(e) => setDirectForm({ ...directForm, phone: e.target.value })}
+                  />
                 </div>
                 <GlassInput
-                  label="限定使用日期"
+                  label="使用日期"
                   type="date"
                   numeric
                   required
@@ -492,7 +802,7 @@ export function GiftsPage() {
               </div>
 
               <GlassUpload
-                label="持票人自拍照（留空则生成专属补充链接由本人补拍）"
+                label="自拍照片（留空则生成专属邀请链接）"
                 value={directForm.avatarUrl}
                 onChange={(url) => setDirectForm({ ...directForm, avatarUrl: url })}
               />
@@ -509,24 +819,23 @@ export function GiftsPage() {
                       }
                       className="w-4 h-4 accent-[#0071e3]"
                     />
-                    我已确认授权，为该身份额外增发一张独立票码的赠票
+                    授权为同一身份额外增发独立票码赠票
                   </label>
                 </div>
               )}
 
               <div className="flex justify-end">
-                <GlassButton type="submit" variant="primary">
-                  确认签发独立赠票
+                <GlassButton type="submit" variant="primary" disabled={isAllScope}>
+                  发放赠票
                 </GlassButton>
               </div>
             </form>
           </GlassCard>
 
-          {/* Batch Import */}
           <GlassCard className="lg:col-span-5 space-y-4 min-w-0">
             <h2 className="text-base font-semibold text-slate-900 flex items-center gap-1.5">
               <Upload className="w-4 h-4 text-[#0071e3]" />
-              批量名单导入
+              批量导入名单
             </h2>
             <GlassInput
               label="导入批次名称"
@@ -534,23 +843,29 @@ export function GiftsPage() {
               onChange={(e) => setImportBatchName(e.target.value)}
             />
             <GlassInput
-              label="默认限定使用日期"
+              label="默认使用日期"
               type="date"
               numeric
               value={importUseDate}
               onChange={(e) => setImportUseDate(e.target.value)}
             />
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-slate-700">CSV / Excel 粘贴数据</label>
+              <label className="text-xs font-medium text-slate-700">CSV 名单内容</label>
               <textarea
                 rows={6}
                 value={importCsv}
                 onChange={(e) => setImportCsv(e.target.value)}
                 className="glass-input p-3 text-xs numeric-text"
+                placeholder="姓名,证件类型,证件号码,国际区号,联系电话"
               />
             </div>
-            <GlassButton variant="primary" className="w-full" onClick={handleBackendImport}>
-              解析名单并生成专属链接
+            <GlassButton
+              variant="primary"
+              className="w-full"
+              disabled={isAllScope}
+              onClick={handleBackendImport}
+            >
+              导入并生成邀请链接
             </GlassButton>
           </GlassCard>
         </div>
@@ -563,28 +878,31 @@ export function GiftsPage() {
           loading={loading}
           searchValue={ticketSearch}
           onSearchChange={setTicketSearch}
-          searchPlaceholder="搜索票务编号（如 GT2027010001）、姓名、批次..."
+          searchPlaceholder="搜索票务编号、姓名或批次..."
           filterSlot={
-            <select
+            <GlassSelect
+              size="sm"
               aria-label="按状态筛选赠票"
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as GiftTicketStatus | 'all')}
-              className="glass-input h-[36px] px-3 text-xs"
-            >
-              <option value="all">全部赠票状态</option>
-              {Object.entries(GIFT_STATUS_LABELS).map(([k, l]) => (
-                <option key={k} value={k}>
-                  {l}
-                </option>
-              ))}
-            </select>
+              onValueChange={(val) => setStatusFilter(val as GiftTicketStatus | 'all')}
+              className="w-36"
+              options={[
+                { value: 'all', label: '全部状态' },
+                ...Object.entries(GIFT_STATUS_LABELS).map(([k, l]) => ({
+                  value: k,
+                  label: l,
+                })),
+              ]}
+            />
           }
           onExportCsv={() => {
             const csv = buildCsvDownloadContent(
-              ['票务编号', '姓名', '来源批次', '使用日期', '状态', '核销时间'],
+              ['票务编号', '姓名', '证件号码', '联系电话', '来源批次', '使用日期', '状态', '核销时间'],
               filteredTickets.map((t) => [
                 t.ticketCode,
                 t.name,
+                maskIdNumber(t.idNumber, false),
+                maskPhone(t.countryCode, t.phone, false),
                 t.batchName,
                 t.useDate,
                 GIFT_STATUS_LABELS[t.status],
@@ -595,71 +913,194 @@ export function GiftsPage() {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `gift-tickets-${currentAct.code}.csv`;
+            a.download = `gift-tickets-${currentAct?.code ?? 'ALL'}.csv`;
             a.click();
             URL.revokeObjectURL(url);
           }}
         />
       )}
 
-      {/* Create Batch Dialog */}
+      {/* Create / Edit Batch Dialog with 7-Type Custom Field Builder */}
       <GlassDialog
         open={batchModalOpen}
-        title="新建自助领票批次"
+        title={editingBatchId ? '配置自助赠票批次' : '新建自助赠票批次'}
         onClose={() => setBatchModalOpen(false)}
+        maxWidthClass="max-w-2xl"
       >
-        <form onSubmit={handleCreateBatch} className="space-y-4">
+        <form onSubmit={handleSaveBatch} className="space-y-5">
           <GlassInput
             label="批次名称"
             required
-            value={newBatch.name}
-            onChange={(e) => setNewBatch({ ...newBatch, name: e.target.value })}
-            placeholder="例如：高校动漫社团专享赠票"
+            value={batchForm.name}
+            onChange={(e) => setBatchForm({ ...batchForm, name: e.target.value })}
+            placeholder="例如：高校社团专享赠票"
           />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <GlassInput
-              label="总票数配额"
+              label="总配额"
               type="number"
               min={1}
               required
               numeric
-              value={newBatch.totalQuota}
-              onChange={(e) => setNewBatch({ ...newBatch, totalQuota: e.target.value })}
+              value={batchForm.totalQuota}
+              onChange={(e) => setBatchForm({ ...batchForm, totalQuota: e.target.value })}
             />
             <GlassInput
-              label="可领取使用日期（逗号分隔，仅限列表内选择）"
+              label="可选使用日期（逗号分隔）"
               required
               numeric
-              value={newBatch.datesText}
-              onChange={(e) => setNewBatch({ ...newBatch, datesText: e.target.value })}
+              value={batchForm.datesText}
+              onChange={(e) => setBatchForm({ ...batchForm, datesText: e.target.value })}
               placeholder="2026-11-26, 2026-11-27"
             />
             <GlassDatePicker
-              label="自助领取开放时间"
-              value={newBatch.openAt}
-              onChange={(v) => setNewBatch({ ...newBatch, openAt: v })}
+              label="开放时间"
+              value={batchForm.openAt}
+              onChange={(v) => setBatchForm({ ...batchForm, openAt: v })}
             />
             <GlassDatePicker
-              label="自助领取截止时间"
-              value={newBatch.closeAt}
-              onChange={(v) => setNewBatch({ ...newBatch, closeAt: v })}
+              label="截止时间"
+              value={batchForm.closeAt}
+              onChange={(v) => setBatchForm({ ...batchForm, closeAt: v })}
             />
           </div>
+
+          {/* 7-Type Custom Field Builder */}
+          <div className="pt-4 border-t border-slate-900/[0.08] space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-slate-900">自定义登记字段</h3>
+              <GlassButton size="sm" variant="secondary" onClick={addCustomFieldRow}>
+                <Plus className="w-3.5 h-3.5" />
+                添加字段
+              </GlassButton>
+            </div>
+
+            {batchForm.customFields.length === 0 ? (
+              <p className="text-xs text-slate-400 py-3 text-center glass-surface-subtle">
+                暂未配置自定义字段
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {batchForm.customFields.map((field, idx) => {
+                  const hasOptions =
+                    field.type === 'radio' ||
+                    field.type === 'checkbox' ||
+                    field.type === 'select';
+                  return (
+                    <div
+                      key={field.id}
+                      className="glass-surface-subtle p-3.5 space-y-3"
+                    >
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                        <div className="sm:col-span-5">
+                          <GlassInput
+                            label="字段名称"
+                            required
+                            value={field.label}
+                            onChange={(e) =>
+                              updateCustomFieldRow(idx, { label: e.target.value })
+                            }
+                            placeholder="如 所属媒体 / 到场时段"
+                          />
+                        </div>
+                        <div className="sm:col-span-4">
+                          <GlassSelect
+                            label="字段类型"
+                            value={field.type}
+                            onValueChange={(val) =>
+                              updateCustomFieldRow(idx, { type: val as CustomFieldType })
+                            }
+                            options={CUSTOM_FIELD_TYPE_OPTIONS}
+                          />
+                        </div>
+                        <div className="sm:col-span-3 flex items-center justify-end gap-1 pb-1">
+                          <button
+                            type="button"
+                            aria-label="上移字段"
+                            disabled={idx === 0}
+                            onClick={() => moveCustomFieldRow(idx, -1)}
+                            className="p-1.5 rounded-lg text-slate-500 hover:bg-white disabled:opacity-30 cursor-pointer"
+                          >
+                            <ArrowUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="下移字段"
+                            disabled={idx === batchForm.customFields.length - 1}
+                            onClick={() => moveCustomFieldRow(idx, 1)}
+                            className="p-1.5 rounded-lg text-slate-500 hover:bg-white disabled:opacity-30 cursor-pointer"
+                          >
+                            <ArrowDown className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="删除字段"
+                            onClick={() => removeCustomFieldRow(idx)}
+                            className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
+                        {hasOptions ? (
+                          <div className="sm:col-span-9">
+                            <GlassInput
+                              label="选项列表（逗号分隔）"
+                              required
+                              value={field.optionsText}
+                              onChange={(e) =>
+                                updateCustomFieldRow(idx, { optionsText: e.target.value })
+                              }
+                              placeholder="选项一, 选项二, 选项三"
+                            />
+                          </div>
+                        ) : (
+                          <div className="sm:col-span-9">
+                            <GlassInput
+                              label="占位提示（选填）"
+                              value={field.placeholder}
+                              onChange={(e) =>
+                                updateCustomFieldRow(idx, { placeholder: e.target.value })
+                              }
+                              placeholder="选填"
+                            />
+                          </div>
+                        )}
+                        <label className="sm:col-span-3 flex items-center gap-2 text-xs text-slate-700 cursor-pointer pt-5">
+                          <input
+                            type="checkbox"
+                            checked={field.required}
+                            onChange={(e) =>
+                              updateCustomFieldRow(idx, { required: e.target.checked })
+                            }
+                            className="w-4 h-4 accent-[#0071e3]"
+                          />
+                          必填字段
+                        </label>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           <div className="flex justify-end gap-2">
             <GlassButton variant="secondary" onClick={() => setBatchModalOpen(false)}>
               取消
             </GlassButton>
             <GlassButton type="submit" variant="primary">
-              创建自助批次
+              保存批次
             </GlassButton>
           </div>
         </form>
       </GlassDialog>
 
-      {/* Electronic Gift Ticket Preview */}
       <GlassDialog
         open={Boolean(previewTicket)}
-        title="电子赠票预览（一票一码）"
+        title="电子赠票"
         onClose={() => setPreviewTicket(null)}
         maxWidthClass="max-w-md"
       >
@@ -667,8 +1108,8 @@ export function GiftsPage() {
           <ElectronicCredentialCard
             credentialKind="gift"
             credentialId={previewTicket.id}
-            activityId={currentAct.id}
-            activityName={currentAct.name}
+            activityId={previewTicket.activityId}
+            activityName={activityById[previewTicket.activityId]?.name ?? currentAct?.name ?? ''}
             holderName={previewTicket.name}
             code={previewTicket.ticketCode}
             subtitle={previewTicket.batchName}

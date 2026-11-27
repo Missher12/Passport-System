@@ -21,6 +21,7 @@ export function GlassTable<T extends { id: string }>({
   searchValue,
   onSearchChange,
   filterSlot,
+  headerActions,
   selectable = false,
   selectedIds = [],
   onSelectionChange,
@@ -40,6 +41,7 @@ export function GlassTable<T extends { id: string }>({
   searchValue?: string;
   onSearchChange?: (val: string) => void;
   filterSlot?: React.ReactNode;
+  headerActions?: React.ReactNode;
   selectable?: boolean;
   selectedIds?: string[];
   onSelectionChange?: (ids: string[]) => void;
@@ -111,7 +113,7 @@ export function GlassTable<T extends { id: string }>({
 
   return (
     <div className="glass-surface w-full min-w-0 overflow-hidden">
-      {(searchable || filterSlot || onExportCsv || (selectedIds.length > 0 && batchActions)) && (
+      {(searchable || filterSlot || headerActions || onExportCsv || (selectedIds.length > 0 && batchActions)) && (
         <div className="p-4 border-b border-slate-900/[0.06] flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-0">
             {searchable && onSearchChange && (
@@ -150,6 +152,7 @@ export function GlassTable<T extends { id: string }>({
                 {exportLabel}
               </GlassButton>
             )}
+            {headerActions}
           </div>
         </div>
       )}

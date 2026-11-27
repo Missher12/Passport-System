@@ -2,23 +2,19 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import {
   Bell,
-  Building2,
   Calendar,
   Check,
   ChevronDown,
   ExternalLink,
-  FileText,
   HelpCircle,
   KeyRound,
   LogOut,
   Menu,
   Search,
   Settings,
-  Shield,
   Sparkles,
   Ticket,
   UserCheck,
-  Users,
   X,
 } from 'lucide-react';
 import { useApp } from '../../app/providers/AppContext';
@@ -29,7 +25,7 @@ import { formatDateDisplay } from '../../utils/stateMachines';
 import { getApiClient } from '../../services/api';
 
 const PRIMARY_NAV: Array<{
-  id: AdminNavSection | 'manage_menu';
+  id: AdminNavSection;
   label: string;
   module?: PermissionModule;
 }> = [
@@ -39,23 +35,13 @@ const PRIMARY_NAV: Array<{
   { id: 'certificates', label: '证件', module: 'certificates' },
   { id: 'gifts', label: '赠票', module: 'gifts' },
   { id: 'redemption', label: '核销', module: 'redemption' },
-  { id: 'manage_menu', label: '设置' },
+  { id: 'admin_settings', label: '设置' },
 ];
 
-const MANAGE_ITEMS: Array<{
-  id: AdminNavSection;
-  label: string;
-  module: PermissionModule;
-  icon: React.ReactNode;
-}> = [
-  { id: 'admin_users', label: '用户账号', module: 'users', icon: <Users className="w-4 h-4" /> },
-  { id: 'admin_roles', label: '角色权限', module: 'roles', icon: <Shield className="w-4 h-4" /> },
-  { id: 'admin_departments', label: '部门管理', module: 'departments', icon: <Building2 className="w-4 h-4" /> },
-  { id: 'admin_audit', label: '操作日志', module: 'audit_logs', icon: <FileText className="w-4 h-4" /> },
-  { id: 'admin_settings', label: '系统设置', module: 'settings', icon: <Settings className="w-4 h-4" /> },
-];
-
-const ACTIVITY_STATUS_TEXT: Record<ActivityStatus, { label: string; tone: 'success' | 'warning' | 'neutral' | 'info' }> = {
+const ACTIVITY_STATUS_TEXT: Record<
+  ActivityStatus,
+  { label: string; tone: 'success' | 'warning' | 'neutral' | 'info' }
+> = {
   active: { label: '进行中', tone: 'success' },
   draft: { label: '即将开始', tone: 'info' },
   paused: { label: '已暂停', tone: 'warning' },
@@ -71,6 +57,7 @@ export function GlassHeader() {
     activities,
     activeActivityId,
     activeActivity,
+    settings,
     notifications,
     navigateAdmin,
     switchPortal,
@@ -85,7 +72,6 @@ export function GlassHeader() {
   const [activityMenuOpen, setActivityMenuOpen] = useState(false);
   const [activitySearch, setActivitySearch] = useState('');
   const [activityFilter, setActivityFilter] = useState<'all' | 'active' | 'draft' | 'archived'>('all');
-  const [manageMenuOpen, setManageMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -95,19 +81,19 @@ export function GlassHeader() {
   const headerRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
+    if (settings?.adapterMode !== 'mock') return;
     getApiClient()
       .users.listUsers()
       .then((list) =>
         setDemoUsers(list.map((u) => ({ id: u.id, displayName: u.displayName, roleId: u.roleId }))),
       )
       .catch(() => {});
-  }, [portal]);
+  }, [portal, settings?.adapterMode]);
 
   useEffect(() => {
     const onOutside = (e: MouseEvent) => {
       if (headerRef.current && !headerRef.current.contains(e.target as Node)) {
         setActivityMenuOpen(false);
-        setManageMenuOpen(false);
         setNotifOpen(false);
         setAccountOpen(false);
       }
@@ -132,16 +118,14 @@ export function GlassHeader() {
   }, [activities, activityFilter, activitySearch]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
-  const isManageActive = activeNav.startsWith('admin_');
 
   const closeAllDropdowns = () => {
     setActivityMenuOpen(false);
-    setManageMenuOpen(false);
     setNotifOpen(false);
     setAccountOpen(false);
   };
 
-  // === External Portal Header (Chapter 4.5: Same Liquid Glass Brand Header, Internal Entries Hidden) ===
+  // === External Portal Header ===
   if (portal === 'exhibitor' || portal === 'gift') {
     return (
       <header ref={headerRef} className="app-header">
@@ -155,22 +139,18 @@ export function GlassHeader() {
             </span>
             <span className="text-slate-300 hidden sm:inline" aria-hidden="true">/</span>
             <span className="text-sm text-slate-700 font-medium truncate hidden sm:inline">
-              {activeActivity?.name ?? '活动服务入口'}
-            </span>
-            <span className="text-slate-300 hidden md:inline" aria-hidden="true">·</span>
-            <span className="text-xs text-slate-500 whitespace-nowrap hidden md:inline">
-              {portal === 'exhibitor' ? '外部展商服务空间' : '活动赠票领取入口'}
+              {activeActivity?.name ?? activities[0]?.name ?? '活动服务'}
             </span>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
             <GlassButton size="sm" variant="ghost" onClick={() => setHelpOpen(true)}>
               <HelpCircle className="w-4 h-4" />
-              <span className="hidden sm:inline">使用帮助</span>
+              <span className="hidden sm:inline">帮助</span>
             </GlassButton>
             {user && (
               <GlassButton size="sm" variant="secondary" onClick={() => switchPortal('admin')}>
-                返回管理后台
+                返回后台
               </GlassButton>
             )}
           </div>
@@ -178,22 +158,22 @@ export function GlassHeader() {
 
         <GlassDialog
           open={helpOpen}
-          title={portal === 'exhibitor' ? '外部展商登记与头像补充说明' : '活动赠票领取与电子票使用说明'}
+          title={portal === 'exhibitor' ? '展商登记说明' : '赠票使用说明'}
           onClose={() => setHelpOpen(false)}
           maxWidthClass="max-w-lg"
         >
           <div className="space-y-3 text-sm text-slate-700 leading-relaxed">
             {portal === 'exhibitor' ? (
               <>
-                <p>1. 展商主档案由活动方预先创建，请使用管理员提供的 7 项档案信息与唯一商务密码完成身份核验。</p>
-                <p>2. 主要联系人已自动计入第 01 号名额，其余人员支持单条录入或下载模板批量导入。</p>
-                <p>3. 到达头像补充开放日期后，原链接将自动切换至头像上传阶段，完成上传后即可查看个人电子证件。</p>
+                <p>1. 请使用活动方提供的 7 项展商档案信息及商务密码完成核验。</p>
+                <p>2. 主要联系人自动占用 01 号名额，其余人员可逐条登记或使用模板批量导入。</p>
+                <p>3. 头像补充开放后，上传本人清晰自拍即可生成个人电子证件。</p>
               </>
             ) : (
               <>
-                <p>1. 同一活动内每个实名身份仅限自助领取 1 张赠票，跨不同批次系统将自动去重校验。</p>
-                <p>2. 使用日期仅可从管理员开放的日期列表中选择，确认提交并上传清晰自拍后即时生成电子赠票。</p>
-                <p>3. 入场核验时请出示实时刷新的动态二维码，截图无效。</p>
+                <p>1. 同一活动内每个实名身份仅限自助领取 1 张赠票。</p>
+                <p>2. 请在开放日期中选择使用日期，并上传本人清晰自拍以生成电子赠票。</p>
+                <p>3. 现场入场核验请出示实时动态二维码，静态截图无效；关闭页面后可通过「找回电子赠票」重新打开。</p>
               </>
             )}
           </div>
@@ -206,169 +186,66 @@ export function GlassHeader() {
   return (
     <header ref={headerRef} className="app-header">
       <div className="glass-nav-bar w-full px-4 sm:px-5 h-[58px] flex items-center justify-between gap-2 lg:gap-3">
-        {/* LEFT ZONE: Brand (flex-1 basis-0 on lg+ keeps brand pinned to left pill edge and nav centered) */}
-        <div className="flex items-center justify-start gap-2 shrink-0 lg:flex-1 lg:basis-0 min-w-0">
+        {/* LEFT ZONE: Brand + Activity Switcher */}
+        <div className="flex items-center justify-start gap-2.5 flex-1 lg:basis-0 min-w-0">
+          <button
+            type="button"
+            aria-label="萤火通行工作台"
+            onClick={() => {
+              closeAllDropdowns();
+              navigateAdmin('dashboard');
+            }}
+            className="flex items-center gap-2 cursor-pointer shrink-0 focus-visible:outline-2 focus-visible:outline-[#0071e3] rounded-xl"
+          >
+            <div className="w-8 h-8 rounded-[11px] bg-gradient-to-br from-[#0071e3] to-[#38bdf8] text-white flex items-center justify-center shadow-[0_4px_12px_rgba(0,113,227,0.28)] shrink-0">
+              <Sparkles className="w-4 h-4" aria-hidden="true" />
+            </div>
+            <span className="hidden sm:inline font-semibold text-[15px] tracking-tight text-slate-900 whitespace-nowrap">
+              萤火通行
+            </span>
+          </button>
+
+          <span className="hidden sm:block w-px h-4 bg-slate-900/10 shrink-0" aria-hidden="true" />
+
+          {/* Activity Switcher */}
+          <div className="relative min-w-0 max-w-[200px] xl:max-w-[240px]">
             <button
               type="button"
-              aria-label="萤火通行工作台"
+              aria-expanded={activityMenuOpen}
+              aria-label="切换当前活动"
               onClick={() => {
+                const next = !activityMenuOpen;
                 closeAllDropdowns();
-                navigateAdmin('dashboard');
+                setActivityMenuOpen(next);
               }}
-              className="flex items-center gap-2 cursor-pointer shrink-0 focus-visible:outline-2 focus-visible:outline-[#0071e3] rounded-xl"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-[11px] hover:bg-slate-900/[0.04] border border-transparent hover:border-slate-900/[0.08] transition-all cursor-pointer max-w-full min-w-0"
             >
-              <div className="w-8 h-8 rounded-[11px] bg-gradient-to-br from-[#0071e3] to-[#38bdf8] text-white flex items-center justify-center shadow-[0_4px_12px_rgba(0,113,227,0.28)] shrink-0">
-                <Sparkles className="w-4 h-4" aria-hidden="true" />
-              </div>
-              <span className="hidden sm:inline font-semibold text-[15px] tracking-tight text-slate-900 whitespace-nowrap">
-                萤火通行
-              </span>
-            </button>
-          </div>
-
-          {/* CENTER ZONE: Single-Layer Global Main Navigation */}
-          <nav
-            aria-label="主导航"
-            className="hidden lg:flex items-center justify-center gap-0.5 xl:gap-1 relative shrink-0"
-          >
-            {PRIMARY_NAV.map((item) => {
-              if (item.id === 'manage_menu') {
-                const hasAnyManage = MANAGE_ITEMS.some((m) => canAccessModule(m.module));
-                return (
-                  <div key="manage_menu" className="relative">
-                    <button
-                      type="button"
-                      aria-expanded={manageMenuOpen}
-                      onClick={() => {
-                        const next = !manageMenuOpen;
-                        closeAllDropdowns();
-                        setManageMenuOpen(next);
-                      }}
-                      className={`relative px-2.5 xl:px-3 2xl:px-3.5 py-1.5 rounded-full text-[13px] xl:text-sm font-medium whitespace-nowrap shrink-0 inline-flex items-center gap-1 cursor-pointer transition-colors ${
-                        isManageActive
-                          ? 'text-slate-900'
-                          : hasAnyManage
-                            ? 'text-slate-600 hover:text-slate-900'
-                            : 'text-slate-400'
-                      }`}
-                    >
-                      {isManageActive && (
-                        <motion.span
-                          layoutId="nav-active-pill"
-                          transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-                          className="absolute inset-0 rounded-full bg-white/92 border border-white shadow-[0_2px_10px_rgba(15,23,42,0.08)] -z-10"
-                        />
-                      )}
-                      <span>设置</span>
-                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${manageMenuOpen ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {manageMenuOpen && (
-                      <div className="absolute right-0 top-[calc(100%+12px)] w-52 glass-surface-elevated !bg-white/94 p-2 z-[120] space-y-0.5">
-                        {MANAGE_ITEMS.map((sub) => {
-                          const allowed = canAccessModule(sub.module);
-                          const active = activeNav === sub.id;
-                          return (
-                            <button
-                              key={sub.id}
-                              type="button"
-                              onClick={() => {
-                                setManageMenuOpen(false);
-                                navigateAdmin(sub.id);
-                              }}
-                              className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer ${
-                                active
-                                  ? 'bg-[#0071e3]/10 text-[#0071e3]'
-                                  : allowed
-                                    ? 'hover:bg-slate-900/[0.04] text-slate-800'
-                                    : 'opacity-55 hover:bg-slate-900/[0.03] text-slate-500'
-                              }`}
-                            >
-                              <span className="shrink-0">{sub.icon}</span>
-                              <span className="text-sm font-medium">{sub.label}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              }
-
-              const navId = item.id as AdminNavSection;
-              const active = activeNav === navId;
-              const allowed = !item.module || canAccessModule(item.module);
-
-              return (
-                <button
-                  key={navId}
-                  type="button"
-                  onClick={() => {
-                    closeAllDropdowns();
-                    navigateAdmin(navId);
-                  }}
-                  className={`relative px-2.5 xl:px-3 2xl:px-3.5 py-1.5 rounded-full text-[13px] xl:text-sm font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors active:scale-[0.97] ${
-                    active
-                      ? 'text-slate-900'
-                      : allowed
-                        ? 'text-slate-600 hover:text-slate-900'
-                        : 'text-slate-400'
-                  }`}
-                >
-                  {active && (
-                    <motion.span
-                      layoutId="nav-active-pill"
-                      transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-                      className="absolute inset-0 rounded-full bg-white/95 border border-slate-900/[0.06] shadow-[0_2px_10px_rgba(15,23,42,0.08)] -z-10"
-                    />
-                  )}
-                  {item.label}
-                </button>
-              );
-            })}
-          </nav>
-
-          {/* RIGHT ZONE: Embedded Activity Switcher + Global Search + Notifications + Account Menu + Mobile Menu */}
-          <div className="flex items-center justify-end gap-1 sm:gap-1.5 xl:gap-2 flex-1 lg:basis-0 min-w-0">
-            {/* Embedded Liquid Glass Activity Switcher */}
-            <div className="relative flex-1 sm:flex-initial min-w-0 flex justify-start sm:justify-end">
-              <button
-                type="button"
-                aria-expanded={activityMenuOpen}
-                aria-label="切换当前活动"
-                onClick={() => {
-                  const next = !activityMenuOpen;
-                  closeAllDropdowns();
-                  setActivityMenuOpen(next);
-                }}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-[11px] hover:bg-slate-900/[0.04] border border-transparent hover:border-slate-900/[0.08] transition-all cursor-pointer max-w-full sm:max-w-[156px] xl:max-w-[176px] 2xl:max-w-[220px] min-w-0"
-              >
-                <div className="text-left min-w-0 flex-1">
-                  <div className="text-xs xl:text-[13px] font-semibold text-slate-900 truncate leading-tight">
-                    {activeActivityId === 'ALL'
-                      ? '全部活动视图'
-                      : activeActivity?.name ?? '选择活动'}
-                  </div>
-                  <div className="text-[10.5px] xl:text-[11px] text-slate-500 truncate leading-tight mt-0.5 hidden sm:flex items-center gap-1 date-number">
-                    {activeActivity ? (
-                      <>
-                        <span>{formatDateDisplay(activeActivity.startAt)}</span>
-                        <span aria-hidden="true">·</span>
-                        <span>{ACTIVITY_STATUS_TEXT[activeActivity.status].label}</span>
-                      </>
-                    ) : (
-                      <span>跨活动总览模式</span>
-                    )}
-                  </div>
+              <div className="text-left min-w-0 flex-1">
+                <div className="text-xs xl:text-[13px] font-semibold text-slate-900 truncate leading-tight">
+                  {activeActivityId === 'ALL'
+                    ? '全部活动'
+                    : activeActivity?.name ?? '选择活动'}
                 </div>
-                <ChevronDown
-                  className={`w-3.5 h-3.5 text-slate-500 shrink-0 transition-transform ${activityMenuOpen ? 'rotate-180' : ''}`}
-                  aria-hidden="true"
-                />
-              </button>
+                <div className="text-[10.5px] xl:text-[11px] text-slate-500 truncate leading-tight mt-0.5 hidden sm:flex items-center gap-1 date-number">
+                  {activeActivityId === 'ALL' ? (
+                    <span>汇总视图</span>
+                  ) : activeActivity ? (
+                    <>
+                      <span>{formatDateDisplay(activeActivity.startAt)}</span>
+                      <span aria-hidden="true">·</span>
+                      <span>{ACTIVITY_STATUS_TEXT[activeActivity.status].label}</span>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-slate-500 shrink-0 transition-transform ${activityMenuOpen ? 'rotate-180' : ''}`}
+                aria-hidden="true"
+              />
+            </button>
 
             {activityMenuOpen && (
-              <div className="absolute left-[-38px] sm:left-auto sm:right-0 top-[calc(100%+10px)] w-[300px] sm:w-[356px] glass-surface-elevated !bg-white/94 p-3.5 z-[120] space-y-3">
+              <div className="absolute left-0 top-[calc(100%+10px)] w-[300px] sm:w-[356px] glass-surface-elevated !bg-white/96 p-3.5 z-[120] space-y-3">
                 <div className="relative">
                   <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
@@ -405,6 +282,25 @@ export function GlassHeader() {
                 </div>
 
                 <div className="max-h-64 overflow-y-auto space-y-1">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await selectActivity('ALL');
+                      setActivityMenuOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2.5 rounded-xl transition-colors flex items-center justify-between gap-2 cursor-pointer ${
+                      activeActivityId === 'ALL'
+                        ? 'bg-[#0071e3]/10 text-[#0071e3]'
+                        : 'hover:bg-slate-900/[0.04] text-slate-900'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Calendar className="w-4 h-4 shrink-0" />
+                      <span className="text-sm font-medium truncate">全部活动</span>
+                    </div>
+                    {activeActivityId === 'ALL' && <Check className="w-4 h-4 shrink-0" />}
+                  </button>
+
                   {filteredActivities.map((act) => {
                     const selected = act.id === activeActivityId;
                     const st = ACTIVITY_STATUS_TEXT[act.status];
@@ -425,7 +321,9 @@ export function GlassHeader() {
                             {act.name}
                           </div>
                           <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1.5 date-number">
-                            <span className="whitespace-nowrap shrink-0">{formatDateDisplay(act.startAt)}</span>
+                            <span className="whitespace-nowrap shrink-0">
+                              {formatDateDisplay(act.startAt)}
+                            </span>
                             <span aria-hidden="true" className="shrink-0">·</span>
                             <span className="truncate">{act.location}</span>
                           </div>
@@ -439,36 +337,64 @@ export function GlassHeader() {
                   })}
                 </div>
 
-                <div className="pt-2 border-t border-slate-900/[0.07] flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await selectActivity('ALL');
-                      setActivityMenuOpen(false);
-                      navigateAdmin('activities');
-                    }}
-                    className="text-xs font-medium text-[#0071e3] hover:text-[#005bb8] cursor-pointer flex items-center gap-1"
-                  >
-                    <Calendar className="w-3.5 h-3.5" />
-                    全部活动视图
-                  </button>
+                <div className="pt-2 border-t border-slate-900/[0.07] flex items-center justify-end">
                   <button
                     type="button"
                     onClick={() => {
                       setActivityMenuOpen(false);
                       navigateAdmin('activities');
                     }}
-                    className="text-xs text-slate-600 hover:text-slate-900 cursor-pointer"
+                    className="text-xs font-medium text-[#0071e3] hover:text-[#005bb8] cursor-pointer"
                   >
-                    管理活动 →
+                    管理全部活动 →
                   </button>
                 </div>
               </div>
             )}
           </div>
+        </div>
 
-          <span className="hidden sm:block w-px h-4 bg-slate-900/10 shrink-0 mx-0.5" aria-hidden="true" />
+        {/* CENTER ZONE: Single-Layer Global Main Navigation */}
+        <nav
+          aria-label="主导航"
+          className="hidden lg:flex items-center justify-center gap-0.5 xl:gap-1 relative shrink-0"
+        >
+          {PRIMARY_NAV.map((item) => {
+            const isSettings = item.id === 'admin_settings';
+            const active = isSettings ? activeNav.startsWith('admin_') : activeNav === item.id;
+            const allowed = isSettings || !item.module || canAccessModule(item.module);
 
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  closeAllDropdowns();
+                  navigateAdmin(item.id);
+                }}
+                className={`relative px-3 xl:px-3.5 py-1.5 rounded-full text-[13px] xl:text-sm font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors active:scale-[0.97] ${
+                  active
+                    ? 'text-slate-900'
+                    : allowed
+                      ? 'text-slate-600 hover:text-slate-900'
+                      : 'text-slate-400'
+                }`}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="nav-active-pill"
+                    transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                    className="absolute inset-0 rounded-full bg-white/95 border border-slate-900/[0.06] shadow-[0_2px_10px_rgba(15,23,42,0.08)] -z-10"
+                  />
+                )}
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* RIGHT ZONE: Global Search + Notifications + Account Menu + Mobile Trigger */}
+        <div className="flex items-center justify-end gap-1 sm:gap-1.5 xl:gap-2 lg:flex-1 lg:basis-0 shrink-0 min-w-0">
           <button
             type="button"
             aria-label="全局搜索"
@@ -503,9 +429,9 @@ export function GlassHeader() {
             </button>
 
             {notifOpen && (
-              <div className="absolute right-0 top-[calc(100%+12px)] w-[300px] sm:w-[340px] glass-surface-elevated !bg-white/94 p-4 z-[120] space-y-3">
+              <div className="absolute right-0 top-[calc(100%+12px)] w-[300px] sm:w-[340px] glass-surface-elevated !bg-white/96 p-4 z-[120] space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-slate-900">通知中心</span>
+                  <span className="text-sm font-semibold text-slate-900">通知</span>
                   {unreadCount > 0 && (
                     <button
                       type="button"
@@ -518,7 +444,7 @@ export function GlassHeader() {
                 </div>
                 <div className="space-y-2 max-h-72 overflow-y-auto">
                   {notifications.length === 0 ? (
-                    <p className="text-xs text-slate-500 py-4 text-center">当前活动暂无新通知</p>
+                    <p className="text-xs text-slate-500 py-4 text-center">暂无新通知</p>
                   ) : (
                     notifications.map((n) => (
                       <div
@@ -572,23 +498,34 @@ export function GlassHeader() {
                 )}
               </div>
               <div className="hidden xl:block text-left leading-tight">
-                <div className="text-xs font-semibold text-slate-900 whitespace-nowrap">{user?.displayName ?? '未登录'}</div>
-                <div className="text-[11px] text-slate-500 whitespace-nowrap">{role?.name ?? '访客'}</div>
+                <div className="text-xs font-semibold text-slate-900 whitespace-nowrap">
+                  {user?.displayName ?? '未登录'}
+                </div>
+                <div className="text-[11px] text-slate-500 whitespace-nowrap">
+                  {role?.name ?? '访客'}
+                </div>
               </div>
             </button>
 
             {accountOpen && (
-              <div className="absolute right-0 top-[calc(100%+12px)] w-72 glass-surface-elevated !bg-white/94 p-3 z-[120] space-y-3">
+              <div className="absolute right-0 top-[calc(100%+12px)] w-68 glass-surface-elevated !bg-white/96 p-3 z-[120] space-y-2.5">
                 <div className="px-2 py-1.5 border-b border-slate-900/[0.07]">
                   <p className="text-sm font-semibold text-slate-900">{user?.displayName}</p>
-                  <p className="text-xs text-slate-500">
-                    {role?.name} · 核销默认{user?.redemptionMode === 'fast' ? '快速模式' : '普通模式'}
-                  </p>
+                  <p className="text-xs text-slate-500">{role?.name}</p>
                 </div>
 
-                {/* External Portal Quick Launch */}
-                <div className="space-y-1">
-                  <p className="px-2 text-[11px] font-semibold text-slate-500">外部用户端入口预览</p>
+                <div className="space-y-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAccountOpen(false);
+                      navigateAdmin('admin_settings');
+                    }}
+                    className="w-full px-2.5 py-2 rounded-xl hover:bg-slate-900/[0.04] flex items-center gap-2 text-xs font-medium text-slate-800 cursor-pointer"
+                  >
+                    <Settings className="w-3.5 h-3.5 text-slate-500" />
+                    设置与账户
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -599,7 +536,7 @@ export function GlassHeader() {
                   >
                     <span className="flex items-center gap-2">
                       <KeyRound className="w-3.5 h-3.5 text-[#0071e3]" />
-                      进入外部展商端（7 项验证）
+                      展商登记入口
                     </span>
                     <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
                   </button>
@@ -613,39 +550,40 @@ export function GlassHeader() {
                   >
                     <span className="flex items-center gap-2">
                       <Ticket className="w-3.5 h-3.5 text-[#0071e3]" />
-                      进入外部赠票自助端
+                      赠票领取入口
                     </span>
                     <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
                   </button>
                 </div>
 
-                {/* Quick Role Switcher for RBAC Testing */}
-                <div className="space-y-1 pt-2 border-t border-slate-900/[0.07]">
-                  <p className="px-2 text-[11px] font-semibold text-slate-500">切换演示内部角色（Mock）</p>
-                  <div className="grid grid-cols-1 gap-0.5">
-                    {demoUsers.map((du) => (
-                      <button
-                        key={du.id}
-                        type="button"
-                        onClick={async () => {
-                          await switchDemoUser(du.id);
-                          setAccountOpen(false);
-                        }}
-                        className={`w-full px-2.5 py-1.5 rounded-lg text-left text-xs flex items-center justify-between cursor-pointer ${
-                          du.id === user?.id
-                            ? 'bg-[#0071e3]/10 text-[#0071e3] font-medium'
-                            : 'text-slate-700 hover:bg-slate-900/[0.04]'
-                        }`}
-                      >
-                        <span className="flex items-center gap-2">
-                          <UserCheck className="w-3.5 h-3.5" />
-                          {du.displayName}
-                        </span>
-                        {du.id === user?.id && <Check className="w-3.5 h-3.5" />}
-                      </button>
-                    ))}
+                {settings?.adapterMode === 'mock' && demoUsers.length > 0 && (
+                  <div className="space-y-1 pt-2 border-t border-slate-900/[0.07]">
+                    <p className="px-2 text-[11px] font-medium text-slate-400">切换演示账号</p>
+                    <div className="grid grid-cols-1 gap-0.5">
+                      {demoUsers.map((du) => (
+                        <button
+                          key={du.id}
+                          type="button"
+                          onClick={async () => {
+                            await switchDemoUser(du.id);
+                            setAccountOpen(false);
+                          }}
+                          className={`w-full px-2.5 py-1.5 rounded-lg text-left text-xs flex items-center justify-between cursor-pointer ${
+                            du.id === user?.id
+                              ? 'bg-[#0071e3]/10 text-[#0071e3] font-medium'
+                              : 'text-slate-700 hover:bg-slate-900/[0.04]'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <UserCheck className="w-3.5 h-3.5" />
+                            {du.displayName}
+                          </span>
+                          {du.id === user?.id && <Check className="w-3.5 h-3.5" />}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="pt-2 border-t border-slate-900/[0.07]">
                   <button
@@ -657,7 +595,7 @@ export function GlassHeader() {
                     className="w-full px-2.5 py-2 rounded-xl text-xs font-medium text-red-700 hover:bg-red-50 flex items-center gap-2 cursor-pointer"
                   >
                     <LogOut className="w-3.5 h-3.5" />
-                    退出登录（返回登录页）
+                    退出登录
                   </button>
                 </div>
               </div>
@@ -677,18 +615,19 @@ export function GlassHeader() {
         </div>
       </div>
 
-      {/* Mobile Floating Glass Panel (Single-Level Business Entries, Never a Left Fixed Sidebar) */}
+      {/* Mobile Floating Glass Panel */}
       {mobileMenuOpen && (
         <div className="lg:hidden mt-2 glass-surface-elevated p-4 space-y-3 max-h-[calc(100dvh-84px)] overflow-y-auto">
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {PRIMARY_NAV.filter((n) => n.id !== 'manage_menu').map((item) => {
-              const active = activeNav === item.id;
+            {PRIMARY_NAV.map((item) => {
+              const isSettings = item.id === 'admin_settings';
+              const active = isSettings ? activeNav.startsWith('admin_') : activeNav === item.id;
               return (
                 <button
                   key={item.id}
                   type="button"
                   onClick={() => {
-                    navigateAdmin(item.id as AdminNavSection);
+                    navigateAdmin(item.id);
                     setMobileMenuOpen(false);
                   }}
                   className={`px-3 py-2.5 rounded-xl text-sm font-medium text-left cursor-pointer ${
@@ -701,29 +640,6 @@ export function GlassHeader() {
                 </button>
               );
             })}
-          </div>
-          <div className="pt-2 border-t border-slate-900/[0.07]">
-            <p className="text-xs font-semibold text-slate-500 mb-2">设置</p>
-            <div className="grid grid-cols-2 gap-2">
-              {MANAGE_ITEMS.map((sub) => (
-                <button
-                  key={sub.id}
-                  type="button"
-                  onClick={() => {
-                    navigateAdmin(sub.id);
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`px-3 py-2 rounded-xl text-xs font-medium text-left flex items-center gap-2 cursor-pointer ${
-                    activeNav === sub.id
-                      ? 'bg-[#0071e3]/12 text-[#0071e3]'
-                      : 'bg-white/55 text-slate-700'
-                  }`}
-                >
-                  {sub.icon}
-                  {sub.label}
-                </button>
-              ))}
-            </div>
           </div>
           <div className="pt-2 border-t border-slate-900/[0.07] flex flex-wrap gap-2">
             <GlassButton
@@ -745,7 +661,7 @@ export function GlassHeader() {
                 switchPortal('exhibitor');
               }}
             >
-              外部展商端
+              展商入口
             </GlassButton>
             <GlassButton
               size="sm"
@@ -755,7 +671,7 @@ export function GlassHeader() {
                 switchPortal('gift');
               }}
             >
-              外部赠票端
+              赠票入口
             </GlassButton>
           </div>
         </div>

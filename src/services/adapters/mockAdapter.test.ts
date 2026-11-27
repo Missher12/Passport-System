@@ -230,3 +230,231 @@ test('Test 5: Dynamic QR redemption handles normal/fast, duplicate, frozen, date
   assert.equal(offline.valid, false);
   assert.equal(offline.outcome, 'offline');
 });
+
+test('Test 6: Invited gift ticket enforces 5-field identity verification and blocks status overwrite/reactivation', async () => {
+  const api = new MockApiAdapter();
+  const session = await api.auth.getCurrentSession();
+  const admin = session!.user;
+
+  // Create a waiting_fill invited ticket via backendBatchImport
+  const { created } = await api.tickets.backendBatchImport(
+    'act-gz-2027',
+    'VIP邀请批次',
+    '2026-11-26',
+    [
+      {
+        name: '苏明月',
+        idType: 'cn_id',
+        idNumber: '440106199505050088',
+        countryCode: '+86',
+        phone: '13800138505',
+      },
+    ],
+    admin,
+  );
+  assert.equal(created.length, 1);
+  const token = created[0].claimLinkToken!;
+  assert.ok(token);
+
+  // Meta returns safe non-sensitive info
+  const meta = await api.tickets.getInvitedTicketMeta(token);
+  assert.equal(meta.alreadyCompleted, false);
+  assert.equal(meta.status, 'waiting_fill');
+
+  // Wrong name or phone MUST be rejected
+  await assert.rejects(
+    api.tickets.completeInvitedTicket(token, {
+      name: '错误姓名',
+      idType: 'cn_id',
+      idNumber: '440106199505050088',
+      countryCode: '+86',
+      phone: '13800138505',
+      useDate: '2026-11-26',
+      avatarUrl: '/avatar.jpg',
+    }),
+    /身份核验未通过/,
+  );
+
+  await assert.rejects(
+    api.tickets.completeInvitedTicket(token, {
+      name: '苏明月',
+      idType: 'cn_id',
+      idNumber: '440106199505050088',
+      countryCode: '+86',
+      phone: '13899999999',
+      useDate: '2026-11-26',
+      avatarUrl: '/avatar.jpg',
+    }),
+    /身份核验未通过/,
+  );
+
+  // Exact 5-field match succeeds
+  const activated = await api.tickets.completeInvitedTicket(token, {
+    name: '苏明月',
+    idType: 'cn_id',
+    idNumber: '440106199505050088',
+    countryCode: '+86',
+    phone: '13800138505',
+    useDate: '2026-11-26',
+    avatarUrl: '/avatar.jpg',
+  });
+  assert.equal(activated.status, 'valid');
+
+  // Redeem the ticket
+  const red = await api.redemption.confirmRedemption(
+    activated.ticketCode,
+    'act-gz-2027',
+    'normal',
+    admin,
+    '入口1',
+    '2026-11-26',
+  );
+  assert.equal(red.record.outcome, 'success');
+
+  // Attempting to re-complete/reactivate a redeemed ticket MUST be rejected
+  await assert.rejects(
+    api.tickets.completeInvitedTicket(token, {
+      name: '苏明月',
+      idType: 'cn_id',
+      idNumber: '440106199505050088',
+      countryCode: '+86',
+      phone: '13800138505',
+      useDate: '2026-11-26',
+      avatarUrl: '/avatar.jpg',
+    }),
+    /已核销/,
+  );
+});
+
+test('Test 7: Electronic gift ticket retrieval requires CAPTCHA, returns existing tickets read-only, and preserves redeemed/voided status', async () => {
+  const api = new MockApiAdapter();
+  const session = await api.auth.getCurrentSession();
+  const admin = session!.user;
+
+  const claimed = await api.tickets.selfClaim({
+    activityId: 'act-gz-2027',
+    batchId: 'gb-gz-partner',
+    name: '沈清川',
+    idType: 'cn_id',
+    idNumber: '440106199707070066',
+    countryCode: '+86',
+    phone: '13600136707',
+    useDate: '2026-11-26',
+    avatarUrl: '/avatar.jpg',
+  });
+
+  // Missing CAPTCHA token rejected
+  await assert.rejects(
+    api.tickets.retrieveByIdentity(
+      {
+        activityId: 'act-gz-2027',
+        name: '沈清川',
+        idType: 'cn_id',
+        idNumber: '440106199707070066',
+        countryCode: '+86',
+        phone: '13600136707',
+      },
+      '',
+    ),
+    /CAPTCHA_REQUIRED/,
+  );
+
+  // Solve CAPTCHA and retrieve
+  const challenge1 = await api.captcha.assessRisk('high_risk_demo', 'retrieve');
+  const verified1 = await api.captcha.verifyChallenge(
+    challenge1.challengeId,
+    challenge1.expectedAnswer || '',
+  );
+  assert.equal(verified1.passed, true);
+
+  const countBefore = (await api.tickets.listTickets('act-gz-2027')).length;
+  const found1 = await api.tickets.retrieveByIdentity(
+    {
+      activityId: 'act-gz-2027',
+      name: '沈清川',
+      idType: 'cn_id',
+      idNumber: '440106199707070066',
+      countryCode: '+86',
+      phone: '13600136707',
+    },
+    verified1.token!,
+  );
+  assert.equal(found1.tickets.length, 1);
+  assert.equal(found1.tickets[0].ticketCode, claimed.ticket.ticketCode);
+  assert.equal(found1.tickets[0].status, 'valid');
+  // Does not create duplicates
+  assert.equal((await api.tickets.listTickets('act-gz-2027')).length, countBefore);
+
+  // Void ticket and re-retrieve -> must stay voided
+  await api.tickets.setTicketStatus('act-gz-2027', claimed.ticket.id, 'voided', '测试作废', admin);
+  const challenge2 = await api.captcha.assessRisk('high_risk_demo', 'retrieve');
+  const verified2 = await api.captcha.verifyChallenge(
+    challenge2.challengeId,
+    challenge2.expectedAnswer || '',
+  );
+  assert.equal(verified2.passed, true);
+
+  const found2 = await api.tickets.retrieveByIdentity(
+    {
+      activityId: 'act-gz-2027',
+      name: '沈清川',
+      idType: 'cn_id',
+      idNumber: '440106199707070066',
+      countryCode: '+86',
+      phone: '13600136707',
+    },
+    verified2.token!,
+  );
+  assert.equal(found2.tickets[0].status, 'voided');
+});
+
+test('Test 8: ALL activity scope aggregates reads, blocks writes, enforces fast-mode auth, and audits per-field sensitive reveal', async () => {
+  const api = new MockApiAdapter();
+  const session = await api.auth.getCurrentSession();
+  const admin = session!.user;
+
+  // ALL mode read aggregation returns records across multiple activities
+  const allExhibitors = await api.exhibitors.list('ALL');
+  const gzExhibitors = await api.exhibitors.list('act-gz-2027');
+  assert.ok(allExhibitors.length >= gzExhibitors.length);
+
+  // ALL mode write blocked
+  await assert.rejects(
+    api.exhibitors.create(
+      {
+        activityId: 'ALL',
+        boothNumber: 'Z99',
+        boothName: '跨活动非法写入',
+        primaryContactName: '测试',
+        primaryIdType: 'cn_id',
+        primaryIdNumber: '440106199001010011',
+        countryCode: '+86',
+        phone: '13800138999',
+        quota: 2,
+        entryModeOverride: null,
+      },
+      admin,
+    ),
+    /选择具体活动/,
+  );
+
+  // Per-field sensitive reveal logs fieldName
+  await api.auditLogs.recordSensitiveView('act-gz-2027', 'A01-01 陈明轩', admin, '证件号码');
+  const logs = await api.auditLogs.list({ activityId: 'act-gz-2027', action: 'view_sensitive' });
+  assert.ok(logs.some((l) => l.afterState.includes('证件号码')));
+
+  // Normal-mode non-admin user cannot invoke fast redemption mode
+  const staffSession = await api.auth.switchDemoUser('usr-badge');
+  await assert.rejects(
+    api.redemption.confirmRedemption(
+      'GT2027010001',
+      'act-gz-2027',
+      'fast',
+      staffSession.user,
+      '测试端',
+      '2026-11-26',
+    ),
+    /快速核销模式/,
+  );
+});
+

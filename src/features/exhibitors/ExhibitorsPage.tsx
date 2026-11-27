@@ -2,10 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Copy,
   Download,
-  Eye,
-  EyeOff,
   ExternalLink,
-  KeyRound,
   Plus,
   QrCode,
   RefreshCw,
@@ -15,13 +12,16 @@ import {
 import { useApp } from '../../app/providers/AppContext';
 import { PageContainer } from '../../components/layout/PageContainer';
 import {
+  AllActivityReadonlyNotice,
   GlassBadge,
   GlassButton,
   GlassCard,
   GlassInput,
   GlassSelect,
   GlassTabs,
+  GlassToolbar,
   PermissionDeniedState,
+  SensitiveFieldCell,
   StatusIndicator,
 } from '../../components/glass/GlassPrimitives';
 import { GlassDialog, GlassDrawer } from '../../components/glass/GlassOverlay';
@@ -48,6 +48,12 @@ import type {
   IdType,
 } from '../../types/domain';
 
+const COUNTRY_CODE_OPTIONS = COUNTRY_CODES.map((c) => ({
+  value: c.code,
+  label: `${c.code} ${c.label}`,
+  shortLabel: c.code,
+}));
+
 function memberTone(status: CertificateStatus) {
   switch (status) {
     case 'badge_claimed':
@@ -70,6 +76,7 @@ export function ExhibitorsPage() {
   const {
     user,
     role,
+    activeActivityId,
     activeActivity,
     activities,
     realtimeVersion,
@@ -78,7 +85,10 @@ export function ExhibitorsPage() {
     pushToast,
   } = useApp();
 
-  const currentAct = activeActivity ?? activities[0] ?? null;
+  const isAllScope = activeActivityId === 'ALL';
+  const currentAct = isAllScope ? null : (activeActivity ?? activities[0] ?? null);
+  const scopeActivityId = isAllScope ? 'ALL' : (currentAct?.id ?? '');
+
   const [subTab, setSubTab] = useState<'exhibitors' | 'members' | 'avatars'>('exhibitors');
   const [loading, setLoading] = useState(true);
   const [exhibitors, setExhibitors] = useState<Exhibitor[]>([]);
@@ -87,19 +97,24 @@ export function ExhibitorsPage() {
   const [search, setSearch] = useState('');
   const [memberSearch, setMemberSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<CertificateStatus | 'all'>('all');
-  const [revealSensitive, setRevealSensitive] = useState(false);
+
+  // Per-row, per-field sensitive reveal map (auto-cleared on scope/user change or unmount)
+  const [revealedFields, setRevealedFields] = useState<Record<string, boolean>>({});
 
   // Modals & Drawers
   const [createOpen, setCreateOpen] = useState(false);
   const [detailExhibitor, setDetailExhibitor] = useState<Exhibitor | null>(null);
-  const [quotaModal, setQuotaModal] = useState<{ exhibitor: Exhibitor; quota: string; reason: string } | null>(null);
+  const [quotaModal, setQuotaModal] = useState<{
+    exhibitor: Exhibitor;
+    quota: string;
+    reason: string;
+  } | null>(null);
   const [previewMember, setPreviewMember] = useState<ExhibitorMember | null>(null);
   const [importModalExhibitor, setImportModalExhibitor] = useState<Exhibitor | null>(null);
   const [importText, setImportText] = useState('');
   const [importPreview, setImportPreview] = useState<BatchImportRowPreview[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
-  // Create Exhibitor Form
   const [newEx, setNewEx] = useState({
     boothNumber: '',
     boothName: '',
@@ -112,7 +127,6 @@ export function ExhibitorsPage() {
     entryModeOverride: '' as '' | EntryLinkMode,
   });
 
-  // Add Member inside Detail Drawer
   const [newMember, setNewMember] = useState({
     name: '',
     idType: 'cn_id' as IdType,
@@ -122,15 +136,21 @@ export function ExhibitorsPage() {
     roleNote: '',
   });
 
+  // Auto-clear sensitive reveals on activity switch, account switch, or unmount
+  useEffect(() => {
+    setRevealedFields({});
+    return () => setRevealedFields({});
+  }, [scopeActivityId, user?.id]);
+
   const loadData = async () => {
-    if (!currentAct) return;
+    if (!scopeActivityId) return;
     setLoading(true);
     try {
       const api = getApiClient();
       const [ex, mem, cats] = await Promise.all([
-        api.exhibitors.list(currentAct.id),
-        api.members.list(currentAct.id),
-        api.certificates.listCategories(currentAct.id),
+        api.exhibitors.list(scopeActivityId),
+        api.members.list(scopeActivityId),
+        api.certificates.listCategories(scopeActivityId),
       ]);
       setExhibitors(ex);
       setMembers(mem);
@@ -146,7 +166,12 @@ export function ExhibitorsPage() {
 
   useEffect(() => {
     loadData();
-  }, [currentAct?.id, realtimeVersion]);
+  }, [scopeActivityId, realtimeVersion]);
+
+  const activityById = useMemo(
+    () => Object.fromEntries(activities.map((a) => [a.id, a])),
+    [activities],
+  );
 
   const filteredExhibitors = useMemo(() => {
     if (!search.trim()) return exhibitors;
@@ -184,23 +209,34 @@ export function ExhibitorsPage() {
     );
   }
 
-  if (!currentAct) return null;
+  if (!isAllScope && !currentAct) return null;
 
-  const toggleSensitive = async () => {
-    if (!revealSensitive) {
-      if (!role?.canViewUnmaskedSensitive) {
-        pushToast({ tone: 'warning', title: '当前角色仅支持脱敏查看证件号与手机号' });
-        return;
-      }
-      if (user) {
-        await getApiClient().auditLogs.recordSensitiveView(
-          currentAct.id,
-          `${currentAct.name} 展商及人员敏感资料`,
-          user,
-        );
-      }
+  const canRevealSensitive = Boolean(role?.canViewUnmaskedSensitive);
+
+  const toggleFieldReveal = async (
+    fieldKey: string,
+    activityId: string,
+    targetLabel: string,
+    fieldName: string,
+  ) => {
+    const currentlyRevealed = Boolean(revealedFields[fieldKey]);
+    if (currentlyRevealed) {
+      setRevealedFields((prev) => ({ ...prev, [fieldKey]: false }));
+      return;
     }
-    setRevealSensitive((v) => !v);
+    if (!canRevealSensitive) {
+      pushToast({ tone: 'warning', title: '当前角色无明文查看权限' });
+      return;
+    }
+    if (user) {
+      await getApiClient().auditLogs.recordSensitiveView(
+        activityId,
+        targetLabel,
+        user,
+        fieldName,
+      );
+    }
+    setRevealedFields((prev) => ({ ...prev, [fieldKey]: true }));
   };
 
   const copyText = (text: string, label: string) => {
@@ -210,7 +246,7 @@ export function ExhibitorsPage() {
 
   const handleCreateExhibitor = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user || !currentAct) return;
     setSubmitting(true);
     try {
       const res = await getApiClient().exhibitors.create(
@@ -242,8 +278,8 @@ export function ExhibitorsPage() {
       });
       pushToast({
         tone: 'success',
-        title: `展商 ${res.exhibitor.boothNumber} 创建成功`,
-        detail: `唯一商务密码：${res.exhibitor.businessPassword}，已自动建档主联系人 ${res.primaryMember.memberCode}（演示结果）`,
+        title: `展商 ${res.exhibitor.boothNumber} 已创建`,
+        detail: `商务密码：${res.exhibitor.businessPassword}`,
       });
       await loadData();
     } catch (err) {
@@ -259,7 +295,7 @@ export function ExhibitorsPage() {
 
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!detailExhibitor || !user) return;
+    if (!detailExhibitor || !user || !currentAct) return;
     setSubmitting(true);
     try {
       const created = await getApiClient().members.addMember(
@@ -309,23 +345,20 @@ export function ExhibitorsPage() {
     a.click();
     URL.revokeObjectURL(url);
     if (user) {
-      await getApiClient().auditLogs.recordDataExport(currentAct.id, filename, user);
+      await getApiClient().auditLogs.recordDataExport(
+        currentAct?.id ?? 'ALL',
+        filename,
+        user,
+      );
     }
     pushToast({ tone: 'info', title: `已导出 ${filename}` });
   };
 
   const openBatchImport = (ex: Exhibitor) => {
     setImportModalExhibitor(ex);
-    const sample = [
-      '姓名,证件类型,证件号码,国际区号,联系电话,岗位说明',
-      '周嘉宁,居民身份证,440106199506150028,+86,13900139011,展台运营',
-      '陈泽楷,护照,E88221109,+852,92341234,海外翻译',
-    ].join('\n');
-    setImportText(sample);
-    const exMembers = members.filter((m) => m.exhibitorId === ex.id && m.status !== 'voided');
-    const existingKeys = new Set(exMembers.map((m) => normalizeIdentityKey(m.idType, m.idNumber)));
-    const remaining = Math.max(0, ex.quota - exMembers.filter((m) => !m.isOnsiteExtra).length);
-    setImportPreview(parseMemberImportCsv(sample, existingKeys, remaining));
+    const header = '姓名,证件类型,证件号码,国际区号,联系电话,岗位说明\n';
+    setImportText(header);
+    setImportPreview([]);
   };
 
   const reparseImport = (text: string) => {
@@ -334,7 +367,9 @@ export function ExhibitorsPage() {
     const exMembers = members.filter(
       (m) => m.exhibitorId === importModalExhibitor.id && m.status !== 'voided',
     );
-    const existingKeys = new Set(exMembers.map((m) => normalizeIdentityKey(m.idType, m.idNumber)));
+    const existingKeys = new Set(
+      exMembers.map((m) => normalizeIdentityKey(m.idType, m.idNumber)),
+    );
     const remaining = Math.max(
       0,
       importModalExhibitor.quota - exMembers.filter((m) => !m.isOnsiteExtra).length,
@@ -343,7 +378,7 @@ export function ExhibitorsPage() {
   };
 
   const executeBatchImport = async () => {
-    if (!importModalExhibitor || !user) return;
+    if (!importModalExhibitor || !user || !currentAct) return;
     setSubmitting(true);
     try {
       const res = await getApiClient().members.batchImport(
@@ -354,11 +389,8 @@ export function ExhibitorsPage() {
       );
       pushToast({
         tone: 'success',
-        title: `批量导入完成：成功 ${res.imported.length} 人`,
-        detail:
-          res.skippedCount > 0
-            ? `已自动跳过 ${res.skippedCount} 行异常数据，有效数据已安全入库（演示结果）`
-            : '所有有效行均已自动分配递增人员编号（演示结果）',
+        title: `已导入 ${res.imported.length} 人`,
+        detail: res.skippedCount > 0 ? `跳过异常行 ${res.skippedCount} 行` : undefined,
       });
       setImportModalExhibitor(null);
       await loadData();
@@ -368,9 +400,22 @@ export function ExhibitorsPage() {
   };
 
   const exhibitorColumns: GlassTableColumn<Exhibitor>[] = [
+    ...(isAllScope
+      ? [
+          {
+            key: 'activity',
+            header: '所属活动',
+            render: (e: Exhibitor) => (
+              <span className="text-xs text-slate-600">
+                {activityById[e.activityId]?.name ?? e.activityId}
+              </span>
+            ),
+          },
+        ]
+      : []),
     {
       key: 'booth',
-      header: '摊位与展位名称',
+      header: '摊位与展位',
       sortable: true,
       sortValue: (e) => e.boothNumber,
       render: (e) => (
@@ -384,18 +429,46 @@ export function ExhibitorsPage() {
       key: 'contact',
       header: '主要联系人',
       render: (e) => (
-        <div className="text-xs space-y-0.5">
+        <div className="text-xs space-y-1">
           <div className="font-medium text-slate-900">{e.primaryContactName}</div>
-          <div className="text-slate-500 phone-number">
-            {maskPhone(e.countryCode, e.phone, revealSensitive)} ·{' '}
-            {maskIdNumber(e.primaryIdNumber, revealSensitive)}
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-slate-500">
+            <SensitiveFieldCell
+              maskedValue={maskPhone(e.countryCode, e.phone, false)}
+              rawValue={`${e.countryCode} ${e.phone}`}
+              revealed={Boolean(revealedFields[`ex:${e.id}:phone`])}
+              canReveal={canRevealSensitive}
+              fieldLabel={`${e.boothNumber} 联系电话`}
+              onToggle={() =>
+                toggleFieldReveal(
+                  `ex:${e.id}:phone`,
+                  e.activityId,
+                  `${e.boothNumber} ${e.boothName}`,
+                  '联系电话',
+                )
+              }
+            />
+            <SensitiveFieldCell
+              maskedValue={maskIdNumber(e.primaryIdNumber, false)}
+              rawValue={e.primaryIdNumber}
+              revealed={Boolean(revealedFields[`ex:${e.id}:id`])}
+              canReveal={canRevealSensitive}
+              fieldLabel={`${e.boothNumber} 证件号码`}
+              onToggle={() =>
+                toggleFieldReveal(
+                  `ex:${e.id}:id`,
+                  e.activityId,
+                  `${e.boothNumber} ${e.boothName}`,
+                  '证件号码',
+                )
+              }
+            />
           </div>
         </div>
       ),
     },
     {
       key: 'password',
-      header: '唯一商务密码',
+      header: '商务密码',
       render: (e) => (
         <div className="flex items-center gap-2 whitespace-nowrap">
           <span className="numeric-text font-medium text-slate-900">{e.businessPassword}</span>
@@ -413,24 +486,20 @@ export function ExhibitorsPage() {
     },
     {
       key: 'mode',
-      header: '链接入口模式',
+      header: '入口模式',
       render: (e) => {
-        const effective = e.entryModeOverride ?? currentAct.defaultEntryMode;
+        const actMode = activityById[e.activityId]?.defaultEntryMode ?? 'B_UNIFIED';
+        const effective = e.entryModeOverride ?? actMode;
         return (
-          <div className="text-xs">
-            <div className="font-medium text-slate-800">
-              {effective === 'A_INDEPENDENT' ? '模式 A · 独立链接' : '模式 B · 活动统一链接'}
-            </div>
-            <div className="text-slate-400">
-              {e.entryModeOverride ? '展商单独覆盖' : '继承活动默认'}
-            </div>
-          </div>
+          <span className="text-xs text-slate-700">
+            {effective === 'A_INDEPENDENT' ? '独立链接' : '统一链接'}
+          </span>
         );
       },
     },
     {
       key: 'quota',
-      header: '登记进度 / 现场加证',
+      header: '名额进度',
       align: 'right',
       render: (e) => {
         const exMembers = members.filter((m) => m.exhibitorId === e.id && m.status !== 'voided');
@@ -441,7 +510,7 @@ export function ExhibitorsPage() {
               {normalCount} / {e.quota}
             </span>
             {e.onsiteExtraCount > 0 && (
-              <span className="text-[#0071e3] ml-1.5">+{e.onsiteExtraCount} 现场</span>
+              <span className="text-[#0071e3] ml-1.5">+{e.onsiteExtraCount}</span>
             )}
           </div>
         );
@@ -451,33 +520,49 @@ export function ExhibitorsPage() {
       key: 'actions',
       header: '操作',
       align: 'right',
-      render: (e) => (
-        <div className="flex items-center justify-end gap-1.5">
-          <GlassButton size="sm" variant="secondary" onClick={() => setDetailExhibitor(e)}>
-            详情与名单
-          </GlassButton>
-          <GlassButton
-            size="sm"
-            variant="ghost"
-            onClick={() =>
-              switchPortal('exhibitor', {
-                exhibitorToken:
-                  (e.entryModeOverride ?? currentAct.defaultEntryMode) === 'A_INDEPENDENT'
-                    ? e.independentToken
-                    : undefined,
-                exhibitorPrefillBooth: e.boothNumber,
-              })
-            }
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-            外部入口
-          </GlassButton>
-        </div>
-      ),
+      render: (e) => {
+        const actMode = activityById[e.activityId]?.defaultEntryMode ?? 'B_UNIFIED';
+        return (
+          <div className="flex items-center justify-end gap-1.5">
+            <GlassButton size="sm" variant="secondary" onClick={() => setDetailExhibitor(e)}>
+              详情
+            </GlassButton>
+            <GlassButton
+              size="sm"
+              variant="ghost"
+              onClick={() =>
+                switchPortal('exhibitor', {
+                  exhibitorToken:
+                    (e.entryModeOverride ?? actMode) === 'A_INDEPENDENT'
+                      ? e.independentToken
+                      : undefined,
+                  exhibitorPrefillBooth: e.boothNumber,
+                })
+              }
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              展商入口
+            </GlassButton>
+          </div>
+        );
+      },
     },
   ];
 
   const memberColumns: GlassTableColumn<ExhibitorMember>[] = [
+    ...(isAllScope
+      ? [
+          {
+            key: 'activity',
+            header: '所属活动',
+            render: (m: ExhibitorMember) => (
+              <span className="text-xs text-slate-600">
+                {activityById[m.activityId]?.name ?? m.activityId}
+              </span>
+            ),
+          },
+        ]
+      : []),
     {
       key: 'code',
       header: '人员编号',
@@ -493,7 +578,7 @@ export function ExhibitorsPage() {
     },
     {
       key: 'name',
-      header: '姓名与头像',
+      header: '姓名',
       render: (m) => (
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg overflow-hidden bg-slate-200 shrink-0 flex items-center justify-center text-[11px] text-slate-500">
@@ -512,16 +597,47 @@ export function ExhibitorsPage() {
     },
     {
       key: 'id',
-      header: '证件与电话',
+      header: '证件号码',
       render: (m) => (
         <div className="text-xs space-y-0.5">
-          <div className="text-slate-700 numeric-text">
-            {ID_TYPE_LABELS[m.idType]} · {maskIdNumber(m.idNumber, revealSensitive)}
-          </div>
-          <div className="text-slate-500 phone-number">
-            {maskPhone(m.countryCode, m.phone, revealSensitive)}
-          </div>
+          <div className="text-slate-400">{ID_TYPE_LABELS[m.idType]}</div>
+          <SensitiveFieldCell
+            maskedValue={maskIdNumber(m.idNumber, false)}
+            rawValue={m.idNumber}
+            revealed={Boolean(revealedFields[`mem:${m.id}:id`])}
+            canReveal={canRevealSensitive}
+            fieldLabel={`${m.memberCode} 证件号码`}
+            onToggle={() =>
+              toggleFieldReveal(
+                `mem:${m.id}:id`,
+                m.activityId,
+                `${m.memberCode} ${m.name}`,
+                '证件号码',
+              )
+            }
+          />
         </div>
+      ),
+    },
+    {
+      key: 'phone',
+      header: '联系电话',
+      render: (m) => (
+        <SensitiveFieldCell
+          maskedValue={maskPhone(m.countryCode, m.phone, false)}
+          rawValue={`${m.countryCode} ${m.phone}`}
+          revealed={Boolean(revealedFields[`mem:${m.id}:phone`])}
+          canReveal={canRevealSensitive}
+          fieldLabel={`${m.memberCode} 联系电话`}
+          onToggle={() =>
+            toggleFieldReveal(
+              `mem:${m.id}:phone`,
+              m.activityId,
+              `${m.memberCode} ${m.name}`,
+              '联系电话',
+            )
+          }
+        />
       ),
     },
     {
@@ -534,19 +650,19 @@ export function ExhibitorsPage() {
     },
     {
       key: 'status',
-      header: '业务状态',
+      header: '状态',
       render: (m) => (
         <StatusIndicator tone={memberTone(m.status)} label={CERTIFICATE_STATUS_LABELS[m.status]} />
       ),
     },
     {
       key: 'actions',
-      header: '电子凭证',
+      header: '操作',
       align: 'right',
       render: (m) => (
         <GlassButton size="sm" variant="secondary" onClick={() => setPreviewMember(m)}>
           <QrCode className="w-3.5 h-3.5" />
-          查看凭证
+          凭证
         </GlassButton>
       ),
     },
@@ -558,31 +674,29 @@ export function ExhibitorsPage() {
 
   return (
     <PageContainer className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {isAllScope && <AllActivityReadonlyNotice />}
+
+      <GlassToolbar>
         <GlassTabs
+          variant="embedded"
           value={subTab}
           onChange={setSubTab}
           tabs={[
-            { id: 'exhibitors', label: '展商列表', count: exhibitors.length },
-            { id: 'members', label: '全部人员', count: members.length },
-            {
-              id: 'avatars',
-              label: '头像进度',
-              count: members.filter((m) => !m.avatarUrl && m.status !== 'voided').length,
-            },
+            { id: 'exhibitors', label: '展商列表' },
+            { id: 'members', label: '展商人员' },
+            { id: 'avatars', label: '头像进度' },
           ]}
         />
-        <div className="flex items-center gap-2">
-          <GlassButton variant="secondary" onClick={toggleSensitive}>
-            {revealSensitive ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            {revealSensitive ? '恢复脱敏' : '明文查看'}
-          </GlassButton>
-          <GlassButton variant="primary" onClick={() => setCreateOpen(true)}>
-            <Plus className="w-4 h-4" />
-            新建展商档案
-          </GlassButton>
-        </div>
-      </div>
+        <GlassButton
+          size="sm"
+          variant="primary"
+          disabled={isAllScope}
+          onClick={() => setCreateOpen(true)}
+        >
+          <Plus className="w-4 h-4" />
+          新建展商
+        </GlassButton>
+      </GlassToolbar>
 
       {subTab === 'exhibitors' && (
         <GlassTable
@@ -591,25 +705,24 @@ export function ExhibitorsPage() {
           loading={loading}
           searchValue={search}
           onSearchChange={setSearch}
-          searchPlaceholder="搜索摊位号、展位名称、联系人或手机号..."
+          searchPlaceholder="搜索摊位号、展位名称或联系人..."
           onExportCsv={() =>
             handleDownloadCsv(
-              `exhibitors-${currentAct.code}.csv`,
+              `exhibitors-${currentAct?.code ?? 'ALL'}.csv`,
               ['摊位号', '展位名称', '主要联系人', '证件类型', '证件号码', '电话', '申请名额', '现场加证'],
               filteredExhibitors.map((e) => [
                 e.boothNumber,
                 e.boothName,
                 e.primaryContactName,
                 ID_TYPE_LABELS[e.primaryIdType],
-                maskIdNumber(e.primaryIdNumber, revealSensitive),
-                maskPhone(e.countryCode, e.phone, revealSensitive),
+                maskIdNumber(e.primaryIdNumber, false),
+                maskPhone(e.countryCode, e.phone, false),
                 String(e.quota),
                 String(e.onsiteExtraCount),
               ]),
             )
           }
           emptyTitle="暂无展商"
-          emptyDescription="点击「新建展商档案」添加展商。"
         />
       )}
 
@@ -620,33 +733,34 @@ export function ExhibitorsPage() {
           loading={loading}
           searchValue={memberSearch}
           onSearchChange={setMemberSearch}
-          searchPlaceholder="搜索人员编号（如 A01-01）、姓名、摊位号..."
+          searchPlaceholder="搜索人员编号、姓名或摊位号..."
           filterSlot={
-            <select
+            <GlassSelect
+              size="sm"
               aria-label="按状态筛选人员"
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as CertificateStatus | 'all')}
-              className="glass-input h-[36px] px-3 text-xs"
-            >
-              <option value="all">全部证件状态</option>
-              {Object.entries(CERTIFICATE_STATUS_LABELS).map(([k, label]) => (
-                <option key={k} value={k}>
-                  {label}
-                </option>
-              ))}
-            </select>
+              onValueChange={(val) => setStatusFilter(val as CertificateStatus | 'all')}
+              className="w-36"
+              options={[
+                { value: 'all', label: '全部状态' },
+                ...Object.entries(CERTIFICATE_STATUS_LABELS).map(([k, label]) => ({
+                  value: k,
+                  label,
+                })),
+              ]}
+            />
           }
           onExportCsv={() =>
             handleDownloadCsv(
-              `members-${currentAct.code}.csv`,
+              `members-${currentAct?.code ?? 'ALL'}.csv`,
               ['人员编号', '摊位号', '姓名', '证件类型', '证件号码', '电话', '状态', '现场加证'],
               filteredMembers.map((m) => [
                 m.memberCode,
                 m.boothNumber,
                 m.name,
                 ID_TYPE_LABELS[m.idType],
-                maskIdNumber(m.idNumber, revealSensitive),
-                maskPhone(m.countryCode, m.phone, revealSensitive),
+                maskIdNumber(m.idNumber, false),
+                maskPhone(m.countryCode, m.phone, false),
                 CERTIFICATE_STATUS_LABELS[m.status],
                 m.isOnsiteExtra ? '是' : '否',
               ]),
@@ -658,7 +772,9 @@ export function ExhibitorsPage() {
       {subTab === 'avatars' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {exhibitors.map((ex) => {
-            const exMembers = members.filter((m) => m.exhibitorId === ex.id && m.status !== 'voided');
+            const exMembers = members.filter(
+              (m) => m.exhibitorId === ex.id && m.status !== 'voided',
+            );
             const done = exMembers.filter((m) => Boolean(m.avatarUrl)).length;
             const pct = exMembers.length > 0 ? Math.round((done / exMembers.length) * 100) : 0;
             return (
@@ -682,10 +798,7 @@ export function ExhibitorsPage() {
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs">
                   {exMembers.map((m) => (
-                    <span
-                      key={m.id}
-                      className="text-slate-600 numeric-text"
-                    >
+                    <span key={m.id} className="text-slate-600 numeric-text">
                       {m.memberCode} {m.name}（{m.avatarUrl ? '已上传' : '待补拍'}）
                     </span>
                   ))}
@@ -698,69 +811,62 @@ export function ExhibitorsPage() {
 
       <GlassDialog
         open={createOpen}
-        title="新建展商档案"
+        title="新建展商"
         onClose={() => setCreateOpen(false)}
       >
         <form onSubmit={handleCreateExhibitor} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <GlassInput
-              label="1. 摊位号"
+              label="摊位号"
               required
               numeric
               value={newEx.boothNumber}
               onChange={(e) => setNewEx({ ...newEx, boothNumber: e.target.value })}
-              placeholder="例如：A05"
+              placeholder="如 A05"
             />
             <GlassInput
-              label="2. 展位名称"
+              label="展位名称"
               required
               value={newEx.boothName}
               onChange={(e) => setNewEx({ ...newEx, boothName: e.target.value })}
-              placeholder="例如：云端幻想社"
             />
             <GlassInput
-              label="3. 主要联系人姓名"
+              label="主要联系人"
               required
               value={newEx.primaryContactName}
               onChange={(e) => setNewEx({ ...newEx, primaryContactName: e.target.value })}
-              placeholder="主要联系人自动占 1 名额"
             />
             <GlassSelect
-              label="4. 主要联系人证件类型"
+              label="证件类型"
               value={newEx.primaryIdType}
-              onChange={(e) => setNewEx({ ...newEx, primaryIdType: e.target.value as IdType })}
+              onValueChange={(val) => setNewEx({ ...newEx, primaryIdType: val as IdType })}
               options={Object.entries(ID_TYPE_LABELS).map(([value, label]) => ({ value, label }))}
             />
             <GlassInput
-              label="5. 主要联系人证件号码"
+              label="证件号码"
               required
               numeric
               value={newEx.primaryIdNumber}
               onChange={(e) => setNewEx({ ...newEx, primaryIdNumber: e.target.value })}
-              placeholder="居民身份证 18 位或护照号"
             />
-            <div className="grid grid-cols-5 gap-2">
-              <div className="col-span-2">
-                <GlassSelect
-                  label="6. 国际区号"
-                  value={newEx.countryCode}
-                  onChange={(e) => setNewEx({ ...newEx, countryCode: e.target.value })}
-                  options={COUNTRY_CODES.map((c) => ({ value: c.code, label: c.code }))}
-                />
-              </div>
-              <div className="col-span-3">
-                <GlassInput
-                  label="联系电话"
-                  required
-                  numeric
-                  value={newEx.phone}
-                  onChange={(e) => setNewEx({ ...newEx, phone: e.target.value })}
-                  placeholder="输入手机号"
-                />
-              </div>
+            <div className="grid grid-cols-[120px_1fr] gap-2">
+              <GlassSelect
+                label="区号"
+                searchable
+                value={newEx.countryCode}
+                onValueChange={(val) => setNewEx({ ...newEx, countryCode: val })}
+                options={COUNTRY_CODE_OPTIONS}
+              />
+              <GlassInput
+                label="联系电话"
+                required
+                numeric
+                value={newEx.phone}
+                onChange={(e) => setNewEx({ ...newEx, phone: e.target.value })}
+              />
             </div>
             <GlassInput
-              label="申请人数名额"
+              label="申请名额"
               type="number"
               min={1}
               max={200}
@@ -768,18 +874,17 @@ export function ExhibitorsPage() {
               numeric
               value={newEx.quota}
               onChange={(e) => setNewEx({ ...newEx, quota: e.target.value })}
-              hint="主要联系人自动占 1 人，其余人员由展商补全"
             />
             <GlassSelect
-              label="展商链接模式覆盖"
+              label="入口链接模式"
               value={newEx.entryModeOverride}
-              onChange={(e) =>
-                setNewEx({ ...newEx, entryModeOverride: e.target.value as '' | EntryLinkMode })
+              onValueChange={(val) =>
+                setNewEx({ ...newEx, entryModeOverride: val as '' | EntryLinkMode })
               }
               options={[
-                { value: '', label: '继承活动默认模式' },
-                { value: 'A_INDEPENDENT', label: '模式 A：独立专属链接 + 商务密码' },
-                { value: 'B_UNIFIED', label: '模式 B：活动统一链接 + 商务密码' },
+                { value: '', label: '跟随活动默认' },
+                { value: 'A_INDEPENDENT', label: '独立链接' },
+                { value: 'B_UNIFIED', label: '统一链接' },
               ]}
             />
           </div>
@@ -788,7 +893,7 @@ export function ExhibitorsPage() {
               取消
             </GlassButton>
             <GlassButton type="submit" variant="primary" loading={submitting}>
-              创建展商
+              创建
             </GlassButton>
           </div>
         </form>
@@ -805,7 +910,7 @@ export function ExhibitorsPage() {
             <GlassCard subtle className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <p className="text-xs text-slate-500">唯一商务密码</p>
+                  <p className="text-xs text-slate-500">商务密码</p>
                   <p className="text-lg font-semibold text-slate-900 numeric-text">
                     {detailExhibitor.businessPassword}
                   </p>
@@ -819,47 +924,51 @@ export function ExhibitorsPage() {
                     <Copy className="w-3.5 h-3.5" />
                     复制
                   </GlassButton>
-                  <GlassButton
-                    size="sm"
-                    variant="secondary"
-                    onClick={async () => {
-                      if (!user) return;
-                      const updated = await getApiClient().exhibitors.resetBusinessPassword(
-                        currentAct.id,
-                        detailExhibitor.id,
-                        user,
-                      );
-                      pushToast({
-                        tone: 'success',
-                        title: '已重置唯一商务密码',
-                        detail: `新密码：${updated.businessPassword}`,
-                      });
-                      await loadData();
-                    }}
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    重置密码
-                  </GlassButton>
-                  <GlassButton
-                    size="sm"
-                    variant={detailExhibitor.passwordActive ? 'ghost' : 'primary'}
-                    onClick={async () => {
-                      if (!user) return;
-                      await getApiClient().exhibitors.togglePasswordActive(
-                        currentAct.id,
-                        detailExhibitor.id,
-                        !detailExhibitor.passwordActive,
-                        user,
-                      );
-                      pushToast({
-                        tone: 'info',
-                        title: detailExhibitor.passwordActive ? '已停用该商务密码' : '已重新启用商务密码',
-                      });
-                      await loadData();
-                    }}
-                  >
-                    {detailExhibitor.passwordActive ? '停用' : '启用'}
-                  </GlassButton>
+                  {!isAllScope && currentAct && (
+                    <>
+                      <GlassButton
+                        size="sm"
+                        variant="secondary"
+                        onClick={async () => {
+                          if (!user) return;
+                          const updated = await getApiClient().exhibitors.resetBusinessPassword(
+                            currentAct.id,
+                            detailExhibitor.id,
+                            user,
+                          );
+                          pushToast({
+                            tone: 'success',
+                            title: '已重置商务密码',
+                            detail: `新密码：${updated.businessPassword}`,
+                          });
+                          await loadData();
+                        }}
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        重置
+                      </GlassButton>
+                      <GlassButton
+                        size="sm"
+                        variant={detailExhibitor.passwordActive ? 'ghost' : 'primary'}
+                        onClick={async () => {
+                          if (!user) return;
+                          await getApiClient().exhibitors.togglePasswordActive(
+                            currentAct.id,
+                            detailExhibitor.id,
+                            !detailExhibitor.passwordActive,
+                            user,
+                          );
+                          pushToast({
+                            tone: 'info',
+                            title: detailExhibitor.passwordActive ? '已停用密码' : '已启用密码',
+                          });
+                          await loadData();
+                        }}
+                      >
+                        {detailExhibitor.passwordActive ? '停用' : '启用'}
+                      </GlassButton>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -871,13 +980,13 @@ export function ExhibitorsPage() {
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block">申请名额 / 现场加证</span>
+                  <span className="text-slate-500 block">名额 / 现场加证</span>
                   <span className="font-medium text-slate-900 numeric-text mt-0.5 block">
                     {detailExhibitor.quota} 人 / +{detailExhibitor.onsiteExtraCount} 人
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block">专属链接 Token</span>
+                  <span className="text-slate-500 block">专属标识</span>
                   <span className="font-medium text-[#0071e3] numeric-text mt-0.5 block">
                     {detailExhibitor.independentToken}
                   </span>
@@ -885,89 +994,98 @@ export function ExhibitorsPage() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2 pt-2">
-                <GlassButton
-                  size="sm"
-                  variant="secondary"
-                  onClick={() =>
-                    setQuotaModal({
-                      exhibitor: detailExhibitor,
-                      quota: String(detailExhibitor.quota),
-                      reason: '',
-                    })
-                  }
-                >
-                  调整申请名额
-                </GlassButton>
-                <GlassButton
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => openBatchImport(detailExhibitor)}
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  批量导入人员
-                </GlassButton>
+                {!isAllScope && (
+                  <>
+                    <GlassButton
+                      size="sm"
+                      variant="secondary"
+                      onClick={() =>
+                        setQuotaModal({
+                          exhibitor: detailExhibitor,
+                          quota: String(detailExhibitor.quota),
+                          reason: '',
+                        })
+                      }
+                    >
+                      调整名额
+                    </GlassButton>
+                    <GlassButton
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => openBatchImport(detailExhibitor)}
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      批量导入
+                    </GlassButton>
+                  </>
+                )}
                 <GlassButton
                   size="sm"
                   variant="primary"
-                  onClick={() =>
+                  onClick={() => {
+                    const actMode =
+                      activityById[detailExhibitor.activityId]?.defaultEntryMode ?? 'B_UNIFIED';
                     switchPortal('exhibitor', {
                       exhibitorToken:
-                        (detailExhibitor.entryModeOverride ?? currentAct.defaultEntryMode) ===
-                        'A_INDEPENDENT'
+                        (detailExhibitor.entryModeOverride ?? actMode) === 'A_INDEPENDENT'
                           ? detailExhibitor.independentToken
                           : undefined,
                       exhibitorPrefillBooth: detailExhibitor.boothNumber,
-                    })
-                  }
+                    });
+                  }}
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  模拟展商进入空间
+                  展商入口
                 </GlassButton>
               </div>
             </GlassCard>
 
-            {/* Quick Add Member Form */}
-            <form onSubmit={handleAddMember} className="glass-surface-subtle p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-1.5">
-                  <UserPlus className="w-4 h-4 text-[#0071e3]" />
-                  新增展位人员（自动递增编号）
-                </h3>
-                <span className="text-xs text-slate-500 numeric-text">
-                  已用常规名额：{detailMembers.filter((m) => !m.isOnsiteExtra && m.status !== 'voided').length} /{' '}
-                  {detailExhibitor.quota}
-                </span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <GlassInput
-                  label="人员姓名"
-                  required
-                  value={newMember.name}
-                  onChange={(e) => setNewMember({ ...newMember, name: e.target.value })}
-                />
-                <GlassSelect
-                  label="证件类型"
-                  value={newMember.idType}
-                  onChange={(e) => setNewMember({ ...newMember, idType: e.target.value as IdType })}
-                  options={Object.entries(ID_TYPE_LABELS).map(([v, l]) => ({ value: v, label: l }))}
-                />
-                <GlassInput
-                  label="证件号码"
-                  required
-                  numeric
-                  value={newMember.idNumber}
-                  onChange={(e) => setNewMember({ ...newMember, idNumber: e.target.value })}
-                />
-                <div className="grid grid-cols-5 gap-2">
-                  <div className="col-span-2">
+            {!isAllScope && (
+              <form onSubmit={handleAddMember} className="glass-surface-subtle p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-1.5">
+                    <UserPlus className="w-4 h-4 text-[#0071e3]" />
+                    新增人员
+                  </h3>
+                  <span className="text-xs text-slate-500 numeric-text">
+                    {
+                      detailMembers.filter((m) => !m.isOnsiteExtra && m.status !== 'voided')
+                        .length
+                    }{' '}
+                    / {detailExhibitor.quota}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <GlassInput
+                    label="姓名"
+                    required
+                    value={newMember.name}
+                    onChange={(e) => setNewMember({ ...newMember, name: e.target.value })}
+                  />
+                  <GlassSelect
+                    label="证件类型"
+                    value={newMember.idType}
+                    onValueChange={(val) => setNewMember({ ...newMember, idType: val as IdType })}
+                    options={Object.entries(ID_TYPE_LABELS).map(([v, l]) => ({
+                      value: v,
+                      label: l,
+                    }))}
+                  />
+                  <GlassInput
+                    label="证件号码"
+                    required
+                    numeric
+                    value={newMember.idNumber}
+                    onChange={(e) => setNewMember({ ...newMember, idNumber: e.target.value })}
+                  />
+                  <div className="grid grid-cols-[110px_1fr] gap-2">
                     <GlassSelect
                       label="区号"
+                      searchable
                       value={newMember.countryCode}
-                      onChange={(e) => setNewMember({ ...newMember, countryCode: e.target.value })}
-                      options={COUNTRY_CODES.map((c) => ({ value: c.code, label: c.code }))}
+                      onValueChange={(val) => setNewMember({ ...newMember, countryCode: val })}
+                      options={COUNTRY_CODE_OPTIONS}
                     />
-                  </div>
-                  <div className="col-span-3">
                     <GlassInput
                       label="手机号"
                       required
@@ -977,15 +1095,14 @@ export function ExhibitorsPage() {
                     />
                   </div>
                 </div>
-              </div>
-              <div className="flex justify-end">
-                <GlassButton type="submit" size="sm" variant="primary" loading={submitting}>
-                  提交人员资料
-                </GlassButton>
-              </div>
-            </form>
+                <div className="flex justify-end">
+                  <GlassButton type="submit" size="sm" variant="primary" loading={submitting}>
+                    提交
+                  </GlassButton>
+                </div>
+              </form>
+            )}
 
-            {/* Members List */}
             <div className="space-y-2">
               <h3 className="text-sm font-semibold text-slate-900">
                 已登记人员（<span className="numeric-text">{detailMembers.length}</span> 人）
@@ -993,7 +1110,7 @@ export function ExhibitorsPage() {
               <div className="divide-y divide-slate-900/[0.06] glass-surface-subtle px-4">
                 {detailMembers.map((m) => (
                   <div key={m.id} className="py-3 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
+                    <div className="min-w-0 space-y-0.5">
                       <div className="text-sm font-medium text-slate-900">
                         <span className="text-[#0071e3] order-number mr-2">{m.memberCode}</span>
                         {m.name}
@@ -1004,13 +1121,27 @@ export function ExhibitorsPage() {
                           <span className="ml-2 text-[11px] text-amber-700">现场加证</span>
                         )}
                       </div>
-                      <div className="text-xs text-slate-500 phone-number mt-0.5">
-                        {maskPhone(m.countryCode, m.phone, revealSensitive)} ·{' '}
-                        {CERTIFICATE_STATUS_LABELS[m.status]}
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        <SensitiveFieldCell
+                          maskedValue={maskPhone(m.countryCode, m.phone, false)}
+                          rawValue={`${m.countryCode} ${m.phone}`}
+                          revealed={Boolean(revealedFields[`drawer:${m.id}:phone`])}
+                          canReveal={canRevealSensitive}
+                          fieldLabel={`${m.memberCode} 联系电话`}
+                          onToggle={() =>
+                            toggleFieldReveal(
+                              `drawer:${m.id}:phone`,
+                              m.activityId,
+                              `${m.memberCode} ${m.name}`,
+                              '联系电话',
+                            )
+                          }
+                        />
+                        <span>· {CERTIFICATE_STATUS_LABELS[m.status]}</span>
                       </div>
                     </div>
                     <GlassButton size="sm" variant="secondary" onClick={() => setPreviewMember(m)}>
-                      电子证件
+                      凭证
                     </GlassButton>
                   </div>
                 ))}
@@ -1020,7 +1151,6 @@ export function ExhibitorsPage() {
         )}
       </GlassDrawer>
 
-      {/* Quota Adjust Dialog */}
       <GlassDialog
         open={Boolean(quotaModal)}
         title={`调整名额：${quotaModal?.exhibitor.boothNumber ?? ''} ${quotaModal?.exhibitor.boothName ?? ''}`}
@@ -1031,7 +1161,7 @@ export function ExhibitorsPage() {
           <form
             onSubmit={async (e) => {
               e.preventDefault();
-              if (!user) return;
+              if (!user || !currentAct) return;
               try {
                 await getApiClient().exhibitors.updateQuota(
                   currentAct.id,
@@ -1040,7 +1170,7 @@ export function ExhibitorsPage() {
                   quotaModal.reason,
                   user,
                 );
-                pushToast({ tone: 'success', title: '申请名额已更新并同步至展商空间' });
+                pushToast({ tone: 'success', title: '申请名额已更新' });
                 setQuotaModal(null);
                 await loadData();
               } catch (err) {
@@ -1053,7 +1183,7 @@ export function ExhibitorsPage() {
             className="space-y-4"
           >
             <GlassInput
-              label="新的常规申请名额"
+              label="新申请名额"
               type="number"
               numeric
               min={1}
@@ -1062,18 +1192,17 @@ export function ExhibitorsPage() {
               onChange={(e) => setQuotaModal({ ...quotaModal, quota: e.target.value })}
             />
             <GlassInput
-              label="调整原因（将写入审计日志）"
+              label="调整原因"
               required
               value={quotaModal.reason}
               onChange={(e) => setQuotaModal({ ...quotaModal, reason: e.target.value })}
-              placeholder="例如：展位扩大增配名额"
             />
             <div className="flex justify-end gap-2">
               <GlassButton variant="secondary" onClick={() => setQuotaModal(null)}>
                 取消
               </GlassButton>
               <GlassButton type="submit" variant="primary">
-                确认调整
+                确认
               </GlassButton>
             </div>
           </form>
@@ -1082,7 +1211,7 @@ export function ExhibitorsPage() {
 
       <GlassDialog
         open={Boolean(importModalExhibitor)}
-        title={`批量导入人员：${importModalExhibitor?.boothNumber ?? ''} ${importModalExhibitor?.boothName ?? ''}`}
+        title={`批量导入：${importModalExhibitor?.boothNumber ?? ''} ${importModalExhibitor?.boothName ?? ''}`}
         onClose={() => setImportModalExhibitor(null)}
         maxWidthClass="max-w-3xl"
       >
@@ -1101,10 +1230,10 @@ export function ExhibitorsPage() {
                 }
               >
                 <Download className="w-3.5 h-3.5" />
-                下载导入模板
+                下载模板
               </GlassButton>
               <label className="text-xs text-[#0071e3] font-medium cursor-pointer hover:underline">
-                选择本地 CSV 文件
+                选择 CSV 文件
                 <input
                   type="file"
                   accept=".csv,.txt"
@@ -1123,32 +1252,34 @@ export function ExhibitorsPage() {
               value={importText}
               onChange={(e) => reparseImport(e.target.value)}
               className="glass-input w-full p-3 text-xs numeric-text"
-              placeholder="粘贴 CSV / Excel 表格内容..."
+              placeholder="粘贴 CSV 内容..."
             />
 
-            <div className="space-y-2 max-h-56 overflow-y-auto">
-              <p className="text-xs font-semibold text-slate-700 numeric-text">
-                导入预览：共 {importPreview.length} 行 · 有效{' '}
-                {importPreview.filter((r) => r.valid).length} 行 · 异常{' '}
-                {importPreview.filter((r) => !r.valid).length} 行
-              </p>
-              {importPreview.map((row) => (
-                <div
-                  key={row.rowNumber}
-                  className={`p-2.5 rounded-xl text-xs flex flex-wrap items-center justify-between gap-2 ${
-                    row.valid
-                      ? 'bg-emerald-50/80 text-emerald-950'
-                      : 'bg-red-50/80 text-red-900'
-                  }`}
-                >
-                  <span className="numeric-text">
-                    第 {row.rowNumber} 行 · {row.name || '（无姓名）'} · {row.idNumber} ·{' '}
-                    {row.countryCode} {row.phone}
-                  </span>
-                  <span>{row.valid ? '校验通过' : row.errors.join('；')}</span>
-                </div>
-              ))}
-            </div>
+            {importPreview.length > 0 && (
+              <div className="space-y-2 max-h-56 overflow-y-auto">
+                <p className="text-xs font-semibold text-slate-700 numeric-text">
+                  共 {importPreview.length} 行 · 有效{' '}
+                  {importPreview.filter((r) => r.valid).length} 行 · 异常{' '}
+                  {importPreview.filter((r) => !r.valid).length} 行
+                </p>
+                {importPreview.map((row) => (
+                  <div
+                    key={row.rowNumber}
+                    className={`p-2.5 rounded-xl text-xs flex flex-wrap items-center justify-between gap-2 ${
+                      row.valid
+                        ? 'bg-emerald-50/80 text-emerald-950'
+                        : 'bg-red-50/80 text-red-900'
+                    }`}
+                  >
+                    <span className="numeric-text">
+                      第 {row.rowNumber} 行 · {row.name || '（无姓名）'} · {row.idNumber} ·{' '}
+                      {row.countryCode} {row.phone}
+                    </span>
+                    <span>{row.valid ? '校验通过' : row.errors.join('；')}</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="flex justify-end gap-2">
               <GlassButton variant="secondary" onClick={() => setImportModalExhibitor(null)}>
@@ -1160,7 +1291,7 @@ export function ExhibitorsPage() {
                 disabled={importPreview.filter((r) => r.valid).length === 0}
                 onClick={executeBatchImport}
               >
-                确认导入有效数据（{importPreview.filter((r) => r.valid).length} 人）
+                导入有效数据（{importPreview.filter((r) => r.valid).length} 人）
               </GlassButton>
             </div>
           </div>
@@ -1177,8 +1308,8 @@ export function ExhibitorsPage() {
           <ElectronicCredentialCard
             credentialKind="certificate"
             credentialId={previewMember.id}
-            activityId={currentAct.id}
-            activityName={currentAct.name}
+            activityId={previewMember.activityId}
+            activityName={activityById[previewMember.activityId]?.name ?? currentAct?.name ?? ''}
             holderName={previewMember.name}
             code={previewMember.memberCode}
             subtitle={`${categories.find((c) => c.id === previewMember.certificateCategoryId)?.name ?? '展商证'} · ${previewMember.boothNumber} 展位`}

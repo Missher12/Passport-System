@@ -21,8 +21,7 @@ export function GlobalSearchModal() {
 
   useEffect(() => {
     if (!globalSearchOpen) return;
-    const actId = activeActivityId === 'ALL' ? activities[0]?.id : activeActivityId;
-    if (!actId) return;
+    const actId = activeActivityId || 'ALL';
     const api = getApiClient();
     Promise.all([
       api.exhibitors.list(actId, query),
@@ -35,7 +34,7 @@ export function GlobalSearchModal() {
         setTickets(gt.slice(0, 5));
       })
       .catch(() => {});
-  }, [globalSearchOpen, query, activeActivityId, activities]);
+  }, [globalSearchOpen, query, activeActivityId]);
 
   const matchedActivities = activities.filter((a) => {
     if (!query.trim()) return true;

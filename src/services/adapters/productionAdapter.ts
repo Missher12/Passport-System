@@ -19,6 +19,7 @@ import type {
   GiftTicket,
   GiftTicketStatus,
   IdType,
+  InvitedTicketMeta,
   OnsiteExtraToken,
   RealtimeEvent,
   RedemptionMode,
@@ -99,6 +100,16 @@ export class ProductionApiAdapter implements ApiClient {
     switchDemoUser: async () => {
       throw new Error('生产模式不支持演示角色切换');
     },
+    updateProfile: (patch: Partial<Pick<SystemUser, 'displayName' | 'email' | 'countryCode' | 'phone' | 'avatarUrl'>>) =>
+      this.request<SystemUser>('/auth/profile', {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      }),
+    changePassword: (currentPassword: string, newPassword: string) =>
+      this.request<void>('/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ currentPassword, newPassword }),
+      }),
     logout: () => this.request<void>('/auth/logout', { method: 'POST' }),
   };
 
@@ -319,13 +330,39 @@ export class ProductionApiAdapter implements ApiClient {
         `/activities/${activityId}/gift-tickets/batch-import`,
         { method: 'POST', body: JSON.stringify({ batchName, useDate, rows }) },
       ),
+    getInvitedTicketMeta: (claimLinkToken: string) =>
+      this.request<InvitedTicketMeta>(`/public/gift-tickets/invited/${encodeURIComponent(claimLinkToken)}/meta`),
     completeInvitedTicket: (
       claimLinkToken: string,
-      patch: { phone: string; countryCode: string; useDate: string; avatarUrl: string },
+      input: {
+        name: string;
+        idType: IdType;
+        idNumber: string;
+        countryCode: string;
+        phone: string;
+        useDate: string;
+        avatarUrl: string;
+        customFields?: Record<string, string>;
+      },
     ) =>
       this.request<GiftTicket>(`/public/gift-tickets/invited/${encodeURIComponent(claimLinkToken)}`, {
         method: 'POST',
-        body: JSON.stringify(patch),
+        body: JSON.stringify(input),
+      }),
+    retrieveByIdentity: (
+      input: {
+        activityId: string;
+        name: string;
+        idType: IdType;
+        idNumber: string;
+        countryCode: string;
+        phone: string;
+      },
+      captchaToken?: string,
+    ) =>
+      this.request<{ tickets: GiftTicket[]; isMockDemo: boolean }>('/public/gift-tickets/retrieve', {
+        method: 'POST',
+        body: JSON.stringify({ ...input, captchaToken }),
       }),
     setTicketStatus: (activityId: string, ticketId: string, status: GiftTicketStatus, reason: string) =>
       this.request<GiftTicket>(`/activities/${activityId}/gift-tickets/${ticketId}/status`, {
@@ -394,6 +431,8 @@ export class ProductionApiAdapter implements ApiClient {
         method: role.id ? 'PATCH' : 'POST',
         body: JSON.stringify(role),
       }),
+    deleteRole: (roleId: string) =>
+      this.request<void>(`/admin/roles/${roleId}`, { method: 'DELETE' }),
     listDepartments: () => this.request<Department[]>('/admin/departments'),
     saveDepartment: (dept: Omit<Department, 'id' | 'memberCount' | 'createdAt'> & { id?: string }) =>
       this.request<Department>('/admin/departments', {
@@ -435,10 +474,10 @@ export class ProductionApiAdapter implements ApiClient {
       if (filters?.search) qs.set('search', filters.search);
       return this.request<AuditLogEntry[]>(`/admin/audit-logs?${qs.toString()}`);
     },
-    recordSensitiveView: (activityId: string, targetLabel: string) =>
+    recordSensitiveView: (activityId: string, targetLabel: string, _actor: SystemUser, fieldName?: string) =>
       this.request<void>('/admin/audit-logs/sensitive-view', {
         method: 'POST',
-        body: JSON.stringify({ activityId, targetLabel }),
+        body: JSON.stringify({ activityId, targetLabel, fieldName }),
       }),
     recordDataExport: (activityId: string, targetLabel: string) =>
       this.request<void>('/admin/audit-logs/data-export', {

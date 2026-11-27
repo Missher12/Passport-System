@@ -19,6 +19,7 @@ import type {
   GiftTicket,
   GiftTicketStatus,
   IdType,
+  InvitedTicketMeta,
   OnsiteExtraToken,
   RealtimeEvent,
   RedemptionMode,
@@ -98,7 +99,27 @@ export class MockApiAdapter implements ApiClient {
     return this.db.roles.find((r) => r.id === user.roleId) ?? this.db.roles[0];
   }
 
+  private getCurrentUser(): SystemUser | null {
+    return this.db.users.find((u) => u.id === this.currentUserId) ?? null;
+  }
+
+  private matchesActivityScope(itemActivityId: string, requestedActivityId: string): boolean {
+    if (requestedActivityId !== 'ALL') {
+      return itemActivityId === requestedActivityId;
+    }
+    const actor = this.getCurrentUser();
+    if (!actor || actor.authorizedActivityIds === 'ALL') return true;
+    return actor.authorizedActivityIds.includes(itemActivityId);
+  }
+
+  private assertConcreteActivity(activityId: string): void {
+    if (!activityId || activityId === 'ALL') {
+      throw new Error('请先在顶部选择具体活动后再执行此操作');
+    }
+  }
+
   private getActivityName(activityId: string): string {
+    if (activityId === 'ALL') return '全部活动';
     return this.db.activities.find((a) => a.id === activityId)?.name ?? '全局系统';
   }
 
@@ -186,6 +207,42 @@ export class MockApiAdapter implements ApiClient {
       if (!user) throw new Error('目标演示账号不存在');
       this.currentUserId = user.id;
       return { user: { ...user }, role: { ...this.getRoleForUser(user) } };
+    },
+    updateProfile: async (
+      patch: Partial<Pick<SystemUser, 'displayName' | 'email' | 'countryCode' | 'phone' | 'avatarUrl'>>,
+    ) => {
+      const user = this.getCurrentUser();
+      if (!user) throw new Error('请先登录');
+      if (patch.displayName !== undefined && !patch.displayName.trim()) {
+        throw new Error('显示姓名不能为空');
+      }
+      if (patch.phone !== undefined) {
+        const phoneErr = validatePhone(patch.countryCode || user.countryCode, patch.phone);
+        if (phoneErr) throw new Error(phoneErr);
+      }
+      Object.assign(user, patch);
+      this.emit('permission_updated', `已更新个人资料：${user.displayName}`);
+      return { ...user };
+    },
+    changePassword: async (currentPassword: string, newPassword: string) => {
+      const user = this.getCurrentUser();
+      if (!user) throw new Error('请先登录');
+      if (!currentPassword.trim()) throw new Error('请输入当前密码');
+      if (newPassword.trim().length < 8) throw new Error('新密码长度至少为 8 位');
+      this.pushAudit({
+        actorId: user.id,
+        actorName: user.displayName,
+        actorRole: this.getRoleForUser(user).name,
+        activityId: 'global',
+        targetType: 'user',
+        targetId: user.id,
+        targetLabel: user.displayName,
+        action: 'permission_change',
+        beforeState: '原密码',
+        afterState: '已修改登录密码',
+        reason: '用户自主修改登录密码',
+        result: 'success',
+      });
     },
     logout: async () => {
       this.currentUserId = '';
@@ -312,7 +369,7 @@ export class MockApiAdapter implements ApiClient {
 
   public readonly exhibitors = {
     list: async (activityId: string, search?: string) => {
-      let list = this.db.exhibitors.filter((e) => e.activityId === activityId);
+      let list = this.db.exhibitors.filter((e) => this.matchesActivityScope(e.activityId, activityId));
       if (search?.trim()) {
         const q = search.trim().toLowerCase();
         list = list.filter(
@@ -327,7 +384,7 @@ export class MockApiAdapter implements ApiClient {
     },
     getById: async (activityId: string, exhibitorId: string) => {
       const ex = this.db.exhibitors.find(
-        (e) => e.activityId === activityId && e.id === exhibitorId,
+        (e) => this.matchesActivityScope(e.activityId, activityId) && e.id === exhibitorId,
       );
       return ex ? { ...ex } : null;
     },
@@ -347,6 +404,7 @@ export class MockApiAdapter implements ApiClient {
       },
       actor: SystemUser,
     ) => {
+      this.assertConcreteActivity(input.activityId);
       const boothClean = input.boothNumber.trim().toUpperCase();
       if (!boothClean || !input.boothName.trim() || !input.primaryContactName.trim()) {
         throw new Error('请完整填写摊位号、展位名称和主要联系人姓名');
@@ -562,7 +620,7 @@ export class MockApiAdapter implements ApiClient {
       activityId: string,
       filters?: { exhibitorId?: string; status?: CertificateStatus | 'all'; search?: string },
     ) => {
-      let list = this.db.members.filter((m) => m.activityId === activityId);
+      let list = this.db.members.filter((m) => this.matchesActivityScope(m.activityId, activityId));
       if (filters?.exhibitorId) {
         list = list.filter((m) => m.exhibitorId === filters.exhibitorId);
       }
@@ -596,6 +654,7 @@ export class MockApiAdapter implements ApiClient {
       actorLabel: { id: string; name: string; role: string },
       bypassQuota = false,
     ) => {
+      this.assertConcreteActivity(input.activityId);
       const ex = this.db.exhibitors.find(
         (e) => e.activityId === input.activityId && e.id === input.exhibitorId,
       );
@@ -814,7 +873,7 @@ export class MockApiAdapter implements ApiClient {
   public readonly certificates = {
     listCategories: async (activityId: string) => {
       return this.db.certificateCategories
-        .filter((c) => c.activityId === activityId)
+        .filter((c) => this.matchesActivityScope(c.activityId, activityId))
         .map((c) => ({ ...c }));
     },
     saveCategory: async (
@@ -822,6 +881,7 @@ export class MockApiAdapter implements ApiClient {
       category: Omit<CertificateCategory, 'id' | 'activityId'> & { id?: string },
       actor: SystemUser,
     ) => {
+      this.assertConcreteActivity(activityId);
       if (!category.name.trim()) throw new Error('证件类别名称不能为空');
       if (category.id) {
         const existing = this.db.certificateCategories.find(
@@ -873,6 +933,7 @@ export class MockApiAdapter implements ApiClient {
       return { ...created };
     },
     claimIndividual: async (activityId: string, memberId: string, actor: SystemUser) => {
+      this.assertConcreteActivity(activityId);
       const mem = this.db.members.find((m) => m.activityId === activityId && m.id === memberId);
       if (!mem) throw new Error('人员不存在');
       if (mem.status === 'badge_claimed') throw new Error(`${mem.memberCode} 已领取过实体证件`);
@@ -906,6 +967,7 @@ export class MockApiAdapter implements ApiClient {
       return { ...mem };
     },
     claimBatch: async (activityId: string, exhibitorId: string, memberIds: string[], actor: SystemUser) => {
+      this.assertConcreteActivity(activityId);
       if (memberIds.length === 0) throw new Error('请至少选择一名待领取人员');
       const claimed: ExhibitorMember[] = [];
       for (const id of memberIds) {
@@ -956,6 +1018,7 @@ export class MockApiAdapter implements ApiClient {
       },
       actor: SystemUser,
     ) => {
+      this.assertConcreteActivity(input.activityId);
       const ex = this.db.exhibitors.find(
         (e) => e.activityId === input.activityId && e.id === input.exhibitorId,
       );
@@ -1005,7 +1068,7 @@ export class MockApiAdapter implements ApiClient {
     },
     listOnsiteExtraTokens: async (activityId: string) => {
       return this.db.onsiteExtraTokens
-        .filter((t) => t.activityId === activityId)
+        .filter((t) => this.matchesActivityScope(t.activityId, activityId))
         .map((t) => ({ ...t }));
     },
     submitOnsiteExtraMember: async (
@@ -1106,13 +1169,14 @@ export class MockApiAdapter implements ApiClient {
   public readonly gifts = {
     listBatches: async (activityId: string) => {
       return this.db.giftBatches
-        .filter((b) => b.activityId === activityId)
+        .filter((b) => this.matchesActivityScope(b.activityId, activityId))
         .map((b) => ({ ...b }));
     },
     createBatch: async (
       input: Omit<GiftBatch, 'id' | 'claimedCount' | 'shareCode' | 'createdAt'>,
       actor: SystemUser,
     ) => {
+      this.assertConcreteActivity(input.activityId);
       if (!input.name.trim()) throw new Error('请输入赠票批次名称');
       if (input.totalQuota < 1) throw new Error('总票数至少为 1 张');
       if (input.availableDates.length === 0) throw new Error('请至少配置一个可领取使用日期');
@@ -1147,6 +1211,7 @@ export class MockApiAdapter implements ApiClient {
       patch: Partial<GiftBatch>,
       actor: SystemUser,
     ) => {
+      this.assertConcreteActivity(activityId);
       const batch = this.db.giftBatches.find(
         (b) => b.activityId === activityId && b.id === batchId,
       );
@@ -1177,7 +1242,7 @@ export class MockApiAdapter implements ApiClient {
       activityId: string,
       filters?: { batchId?: string; status?: GiftTicketStatus | 'all'; search?: string },
     ) => {
-      let list = this.db.giftTickets.filter((t) => t.activityId === activityId);
+      let list = this.db.giftTickets.filter((t) => this.matchesActivityScope(t.activityId, activityId));
       if (filters?.batchId) {
         list = list.filter((t) => t.batchId === filters.batchId);
       }
@@ -1304,6 +1369,7 @@ export class MockApiAdapter implements ApiClient {
       },
       actor: SystemUser,
     ) => {
+      this.assertConcreteActivity(input.activityId);
       if (!input.name.trim()) throw new Error('请填写受邀人姓名');
       const idErr = validateIdNumber(input.idType, input.idNumber);
       if (idErr) throw new Error(idErr);
@@ -1376,6 +1442,7 @@ export class MockApiAdapter implements ApiClient {
       rows: Array<{ name: string; idType: IdType; idNumber: string; countryCode: string; phone: string }>,
       actor: SystemUser,
     ) => {
+      this.assertConcreteActivity(activityId);
       const created: GiftTicket[] = [];
       const duplicates: string[] = [];
       const now = this.getNowIso();
@@ -1402,6 +1469,7 @@ export class MockApiAdapter implements ApiClient {
           countryCode: row.countryCode || '+86',
           phone: row.phone.trim(),
           useDate,
+          availableDates: [useDate],
           customFields: {},
           status: 'waiting_fill',
           claimLinkToken: `INV-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
@@ -1432,24 +1500,159 @@ export class MockApiAdapter implements ApiClient {
 
       return { created, duplicates };
     },
+    getInvitedTicketMeta: async (claimLinkToken: string): Promise<InvitedTicketMeta> => {
+      const cleaned = claimLinkToken.trim();
+      const ticket = this.db.giftTickets.find((t) => t.claimLinkToken === cleaned);
+      if (!ticket) {
+        throw new Error('邀请链接无效或已过期，请联系活动主办方确认');
+      }
+      const linkedBatch = ticket.batchId
+        ? this.db.giftBatches.find((b) => b.id === ticket.batchId)
+        : undefined;
+      const availableDates =
+        ticket.availableDates && ticket.availableDates.length > 0
+          ? ticket.availableDates
+          : linkedBatch && linkedBatch.availableDates.length > 0
+            ? linkedBatch.availableDates
+            : [ticket.useDate];
+      return {
+        activityId: ticket.activityId,
+        activityName: this.getActivityName(ticket.activityId),
+        batchName: ticket.batchName,
+        ticketCode: ticket.ticketCode,
+        status: ticket.status,
+        availableDates,
+        useDate: ticket.useDate,
+        customFields: linkedBatch?.customFields ?? [],
+        alreadyCompleted:
+          ticket.status !== 'waiting_fill' && ticket.status !== 'submitted',
+      };
+    },
     completeInvitedTicket: async (
       claimLinkToken: string,
-      patch: { phone: string; countryCode: string; useDate: string; avatarUrl: string },
+      input: {
+        name: string;
+        idType: IdType;
+        idNumber: string;
+        countryCode: string;
+        phone: string;
+        useDate: string;
+        avatarUrl: string;
+        customFields?: Record<string, string>;
+      },
     ) => {
-      const ticket = this.db.giftTickets.find((t) => t.claimLinkToken === claimLinkToken);
-      if (!ticket) throw new Error('专属赠票登记链接无效');
-      if (ticket.status === 'voided' || ticket.status === 'expired') {
-        throw new Error('该赠票已失效，无法补充资料');
+      const cleaned = claimLinkToken.trim();
+      const ticket = this.db.giftTickets.find((t) => t.claimLinkToken === cleaned);
+      if (!ticket) throw new Error('专属赠票邀请链接无效');
+
+      // Strictly prevent status overwrite or reactivation of terminal/active tickets
+      if (ticket.status === 'redeemed') {
+        throw new Error('该赠票已核销使用，不可重新激活或重复提交');
       }
-      if (!patch.avatarUrl.trim()) throw new Error('请上传自拍照片');
-      ticket.countryCode = patch.countryCode;
-      ticket.phone = patch.phone.trim();
-      ticket.useDate = patch.useDate || ticket.useDate;
-      ticket.avatarUrl = patch.avatarUrl;
+      if (ticket.status === 'frozen') {
+        throw new Error('该赠票已冻结，无法补充资料');
+      }
+      if (ticket.status === 'voided' || ticket.status === 'expired') {
+        throw new Error('该赠票已作废或已过期，无法补充资料');
+      }
+      if (ticket.status !== 'waiting_fill' && ticket.status !== 'submitted') {
+        throw new Error('该赠票已完成资料补充，请通过电子赠票找回功能查看');
+      }
+
+      // Mandatory 5-field identity match against pre-registered recipient
+      const inputIdKey = normalizeIdentityKey(input.idType, input.idNumber);
+      const identityMatched =
+        ticket.name.trim() === input.name.trim() &&
+        ticket.identityKey === inputIdKey &&
+        ticket.countryCode.trim() === input.countryCode.trim() &&
+        ticket.phone.trim() === input.phone.trim();
+
+      if (!identityMatched) {
+        throw new Error('身份核验未通过，请核对姓名、证件类型、证件号码、国际区号与手机号与受邀登记信息一致');
+      }
+
+      const linkedBatch = ticket.batchId
+        ? this.db.giftBatches.find((b) => b.id === ticket.batchId)
+        : undefined;
+      const allowedDates =
+        ticket.availableDates && ticket.availableDates.length > 0
+          ? ticket.availableDates
+          : linkedBatch && linkedBatch.availableDates.length > 0
+            ? linkedBatch.availableDates
+            : [ticket.useDate];
+      const chosenDate = input.useDate || allowedDates[0];
+      if (!allowedDates.includes(chosenDate)) {
+        throw new Error('所选使用日期不在允许的开放日期范围内');
+      }
+
+      if (linkedBatch?.customFields) {
+        for (const field of linkedBatch.customFields) {
+          if (field.required && !String(input.customFields?.[field.label] ?? '').trim()) {
+            throw new Error(`请填写必填项：${field.label}`);
+          }
+        }
+      }
+
+      if (!input.avatarUrl.trim()) throw new Error('请上传本人清晰正面自拍照片');
+
+      const prevStatus = GIFT_STATUS_LABELS[ticket.status];
+      ticket.useDate = chosenDate;
+      ticket.avatarUrl = input.avatarUrl;
+      ticket.customFields = { ...ticket.customFields, ...(input.customFields ?? {}) };
       ticket.status = 'valid';
       ticket.updatedAt = this.getNowIso();
-      this.emit('gift_updated', `专属赠票 ${ticket.ticketCode} 已补充资料生效`, ticket.activityId);
+
+      this.pushAudit({
+        actorId: 'external-invited-guest',
+        actorName: ticket.name,
+        actorRole: '受邀赠票领取者',
+        activityId: ticket.activityId,
+        targetType: 'gift_ticket',
+        targetId: ticket.id,
+        targetLabel: `${ticket.ticketCode} ${ticket.name}`,
+        action: 'gift_issue',
+        beforeState: prevStatus,
+        afterState: `凭证有效 (${ticket.useDate})`,
+        reason: '受邀赠票完成 5 项身份核验与自拍补充',
+        result: 'success',
+      });
+      this.emit('gift_updated', `受邀赠票 ${ticket.ticketCode} 已核验生效`, ticket.activityId);
       return { ...ticket };
+    },
+    retrieveByIdentity: async (
+      input: {
+        activityId: string;
+        name: string;
+        idType: IdType;
+        idNumber: string;
+        countryCode: string;
+        phone: string;
+      },
+      captchaToken?: string,
+    ) => {
+      if (!captchaToken || !this.verifiedCaptchaTokens.has(captchaToken)) {
+        throw new Error('CAPTCHA_REQUIRED');
+      }
+      if (!input.name.trim()) throw new Error('请输入姓名');
+      const idErr = validateIdNumber(input.idType, input.idNumber);
+      if (idErr) throw new Error(idErr);
+      const phoneErr = validatePhone(input.countryCode, input.phone);
+      if (phoneErr) throw new Error(phoneErr);
+
+      const idKey = normalizeIdentityKey(input.idType, input.idNumber);
+      const matched = this.db.giftTickets.filter(
+        (t) =>
+          (input.activityId === 'ALL' || t.activityId === input.activityId) &&
+          t.name.trim() === input.name.trim() &&
+          t.identityKey === idKey &&
+          t.countryCode.trim() === input.countryCode.trim() &&
+          t.phone.trim() === input.phone.trim(),
+      );
+      if (matched.length === 0) {
+        throw new Error('未查询到匹配的电子赠票，请核对填写信息是否与领票时一致');
+      }
+      // Strictly read-only retrieval: never creates duplicates, never modifies status
+      return { tickets: matched.map((t) => ({ ...t })), isMockDemo: true };
     },
     setTicketStatus: async (
       activityId: string,
@@ -1750,6 +1953,16 @@ export class MockApiAdapter implements ApiClient {
       deviceLabel = '现场统一扫码工作台',
       currentDateOverride?: string,
     ) => {
+      this.assertConcreteActivity(activityId);
+      const actorRole = this.getRoleForUser(actor);
+      const fastAuthorized =
+        actor.redemptionMode === 'fast' ||
+        actorRole.code === 'sys_admin' ||
+        actorRole.code === 'activity_admin';
+      if (mode === 'fast' && !fastAuthorized) {
+        throw new Error('当前账号未被管理员授权使用快速核销模式');
+      }
+
       const preview = await this.redemption.verifyAndPreview(
         rawCodeOrToken,
         activityId,
@@ -1885,7 +2098,7 @@ export class MockApiAdapter implements ApiClient {
       }
     },
     listRecords: async (activityId: string, search?: string) => {
-      let list = this.db.redemptionRecords.filter((r) => r.activityId === activityId);
+      let list = this.db.redemptionRecords.filter((r) => this.matchesActivityScope(r.activityId, activityId));
       if (search?.trim()) {
         const q = search.trim().toLowerCase();
         list = list.filter(
@@ -2034,9 +2247,34 @@ export class MockApiAdapter implements ApiClient {
       this.emit('permission_updated', `新增角色 ${created.name}`);
       return { ...created };
     },
+    deleteRole: async (roleId: string, actor: SystemUser) => {
+      const idx = this.db.roles.findIndex((r) => r.id === roleId);
+      if (idx < 0) throw new Error('角色不存在');
+      const role = this.db.roles[idx];
+      if (role.isPreset) throw new Error('系统预设角色不可删除');
+      const inUse = this.db.users.some((u) => u.roleId === roleId);
+      if (inUse) throw new Error('仍有用户关联该角色，请先调整用户角色后再删除');
+      this.db.roles.splice(idx, 1);
+      this.pushAudit({
+        actorId: actor.id,
+        actorName: actor.displayName,
+        actorRole: this.getRoleForUser(actor).name,
+        activityId: 'global',
+        targetType: 'role',
+        targetId: role.id,
+        targetLabel: role.name,
+        action: 'permission_change',
+        beforeState: role.name,
+        afterState: '已删除',
+        reason: '删除自定义角色',
+        result: 'success',
+      });
+      this.emit('permission_updated', `已删除角色 ${role.name}`);
+    },
     listDepartments: async () =>
       this.db.departments.map((d) => ({
         ...d,
+        active: d.active ?? true,
         memberCount: this.db.users.filter((u) => u.departmentId === d.id).length,
       })),
     saveDepartment: async (
@@ -2049,6 +2287,7 @@ export class MockApiAdapter implements ApiClient {
         if (!existing) throw new Error('部门不存在');
         existing.name = input.name.trim();
         existing.description = input.description;
+        existing.active = input.active ?? existing.active ?? true;
         this.pushAudit({
           actorId: actor.id,
           actorName: actor.displayName,
@@ -2059,7 +2298,7 @@ export class MockApiAdapter implements ApiClient {
           targetLabel: existing.name,
           action: 'permission_change',
           beforeState: '部门编辑',
-          afterState: existing.name,
+          afterState: `${existing.name} (${existing.active ? '启用' : '停用'})`,
           reason: '更新部门信息',
           result: 'success',
         });
@@ -2069,6 +2308,7 @@ export class MockApiAdapter implements ApiClient {
         id: uid('dept'),
         name: input.name.trim(),
         description: input.description,
+        active: input.active ?? true,
         memberCount: 0,
         createdAt: this.getNowIso(),
       };
@@ -2166,7 +2406,12 @@ export class MockApiAdapter implements ApiClient {
       }
       return list;
     },
-    recordSensitiveView: async (activityId: string, targetLabel: string, actor: SystemUser) => {
+    recordSensitiveView: async (
+      activityId: string,
+      targetLabel: string,
+      actor: SystemUser,
+      fieldName?: string,
+    ) => {
       this.pushAudit({
         actorId: actor.id,
         actorName: actor.displayName,
@@ -2174,11 +2419,13 @@ export class MockApiAdapter implements ApiClient {
         activityId,
         targetType: 'sensitive_data',
         targetId: uid('view'),
-        targetLabel,
+        targetLabel: fieldName ? `${targetLabel} · ${fieldName}` : targetLabel,
         action: 'view_sensitive',
         beforeState: '默认脱敏显示',
-        afterState: '临时明文查看',
-        reason: '授权人员查看完整证件号码或手机号',
+        afterState: fieldName ? `明文查看（${fieldName}）` : '明文查看',
+        reason: fieldName
+          ? `授权人员单独展开敏感字段：${fieldName}`
+          : '授权人员查看完整证件号码或手机号',
         result: 'success',
       });
     },

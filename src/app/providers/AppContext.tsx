@@ -25,6 +25,7 @@ export interface ExternalPortalLaunchContext {
   onsiteExtraToken?: string;
   giftBatchId?: string;
   invitedGiftToken?: string;
+  giftRetrieveMode?: boolean;
 }
 
 interface AppContextValue {
@@ -80,6 +81,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [pendingActivitySwitch, setPendingActivitySwitch] = useState<string | null>(null);
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [externalContext, setExternalContext] = useState<ExternalPortalLaunchContext>({});
+
+  // Auto-detect external portal entry parameters from URL query string
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const p = params.get('portal');
+    const act = params.get('activity');
+    if (act) setActiveActivityId(act);
+    if (p === 'exhibitor') {
+      setPortal('exhibitor');
+      setExternalContext({
+        exhibitorToken: params.get('token') || undefined,
+        exhibitorPrefillBooth: params.get('booth') || undefined,
+        onsiteExtraToken: params.get('extra') || undefined,
+      });
+    } else if (p === 'gift') {
+      setPortal('gift');
+      setExternalContext({
+        giftBatchId: params.get('batch') || undefined,
+        invitedGiftToken: params.get('invite') || undefined,
+        giftRetrieveMode: params.get('retrieve') === '1',
+      });
+    }
+  }, []);
 
   const pushToast = useCallback((toast: Omit<ToastItem, 'id'>) => {
     const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;

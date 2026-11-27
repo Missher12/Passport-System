@@ -81,14 +81,6 @@
 *::before,
 *::after {
   box-sizing: border-box;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-*::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
 }
 
 html {
@@ -98,21 +90,13 @@ html {
   min-height: 100dvh;
   overflow-x: clip;
   overflow-y: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-gutter: stable;
   font-family: var(--font-ui);
   color: var(--color-ink-primary);
   background-color: var(--color-canvas-base);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: "zero" 0;
-}
-
-html::-webkit-scrollbar,
-body::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
 }
 
 body {
@@ -125,6 +109,29 @@ body {
   color: var(--color-ink-primary);
   background-color: var(--color-canvas-base);
   font-feature-settings: "zero" 0;
+}
+
+/* Subtle native scrollbar styling without hiding scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.16);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.28);
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 
 #root {
@@ -202,7 +209,7 @@ select {
   flex: 1;
   min-width: 0;
   width: 100%;
-  padding-top: clamp(14px, 1.6vw, 22px);
+  padding-top: clamp(16px, 1.8vw, 24px);
   padding-bottom: clamp(32px, 4vw, 56px);
 }
 
@@ -214,7 +221,7 @@ select {
 
 @media (max-width: 1279px) {
   .page-container {
-    width: 88%;
+    width: 90%;
   }
 }
 

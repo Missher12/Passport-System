@@ -1,11 +1,17 @@
-import React from 'react';
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertCircle,
+  Check,
   CheckCircle2,
+  ChevronDown,
   Clock,
+  Eye,
+  EyeOff,
   Info,
   Lock,
   RefreshCw,
+  Search,
   WifiOff,
   X,
   XCircle,
@@ -81,7 +87,7 @@ export function GlassButton({
         ? 'bg-[#dc2626] text-white hover:bg-[#b91c1c] shadow-[0_6px_18px_rgba(220,38,38,0.22)] border border-white/20'
         : variant === 'ghost'
           ? 'bg-transparent text-slate-700 hover:bg-white/65 border border-transparent'
-          : 'bg-white/75 text-slate-900 hover:bg-white/92 border border-slate-900/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_2px_8px_rgba(15,23,42,0.04)]';
+          : 'bg-white/78 text-slate-900 hover:bg-white/95 border border-slate-900/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_2px_8px_rgba(15,23,42,0.04)]';
 
   return (
     <button
@@ -112,7 +118,8 @@ export function GlassInput({
   className = '',
   ...rest
 }: GlassInputProps) {
-  const inputId = id || (label ? `input-${label.replace(/\s+/g, '-')}` : undefined);
+  const generatedId = useId();
+  const inputId = id || generatedId;
   return (
     <div className="flex flex-col gap-1.5 min-w-0">
       {label && (
@@ -132,41 +139,292 @@ export function GlassInput({
   );
 }
 
-export interface GlassSelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
+export interface GlassSelectOption {
+  value: string;
+  label: string;
+  shortLabel?: string;
+  sublabel?: string;
+}
+
+export interface GlassSelectProps {
   label?: string;
   error?: string;
-  options: Array<{ value: string; label: string }>;
+  options: GlassSelectOption[];
+  value?: string;
+  onChange?: (e: { target: { value: string } }) => void;
+  onValueChange?: (value: string) => void;
+  id?: string;
+  className?: string;
+  placeholder?: string;
+  required?: boolean;
+  disabled?: boolean;
+  searchable?: boolean;
+  searchPlaceholder?: string;
+  size?: 'sm' | 'md';
+  'aria-label'?: string;
 }
 
 export function GlassSelect({
   label,
   error,
   options,
+  value = '',
+  onChange,
+  onValueChange,
   id,
   className = '',
-  ...rest
+  placeholder = '请选择',
+  required,
+  disabled,
+  searchable = false,
+  searchPlaceholder = '搜索选项...',
+  size = 'md',
+  'aria-label': ariaLabel,
 }: GlassSelectProps) {
-  const selectId = id || (label ? `select-${label.replace(/\s+/g, '-')}` : undefined);
+  const generatedId = useId();
+  const selectId = id || generatedId;
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [highlightIndex, setHighlightIndex] = useState(0);
+  const [coords, setCoords] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+    openUp: boolean;
+  } | null>(null);
+
+  const selectedOption = useMemo(
+    () => options.find((o) => o.value === value) ?? null,
+    [options, value],
+  );
+
+  const filteredOptions = useMemo(() => {
+    if (!searchable || !search.trim()) return options;
+    const q = search.trim().toLowerCase();
+    return options.filter(
+      (o) =>
+        o.label.toLowerCase().includes(q) ||
+        o.value.toLowerCase().includes(q) ||
+        (o.sublabel && o.sublabel.toLowerCase().includes(q)),
+    );
+  }, [options, searchable, search]);
+
+  const updatePosition = () => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom - 12;
+    const spaceAbove = rect.top - 12;
+    const preferredHeight = Math.min(280, (searchable ? 46 : 0) + Math.max(1, filteredOptions.length) * 38 + 16);
+    const openUp = spaceBelow < Math.min(220, preferredHeight) && spaceAbove > spaceBelow;
+    const maxHeight = Math.max(140, Math.min(280, openUp ? spaceAbove : spaceBelow));
+    const panelWidth = Math.max(rect.width, 168);
+    const clampedLeft = Math.min(
+      Math.max(8, rect.left),
+      Math.max(8, window.innerWidth - panelWidth - 8),
+    );
+    const top = openUp ? Math.max(8, rect.top - Math.min(preferredHeight, maxHeight) - 6) : rect.bottom + 6;
+    setCoords({
+      top,
+      left: clampedLeft,
+      width: panelWidth,
+      maxHeight,
+      openUp,
+    });
+  };
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePosition();
+  }, [open, filteredOptions.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    const idx = filteredOptions.findIndex((o) => o.value === value);
+    setHighlightIndex(idx >= 0 ? idx : 0);
+    if (searchable) {
+      window.setTimeout(() => searchInputRef.current?.focus(), 20);
+    }
+
+    const onOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        triggerRef.current &&
+        !triggerRef.current.contains(target) &&
+        panelRef.current &&
+        !panelRef.current.contains(target)
+      ) {
+        setOpen(false);
+      }
+    };
+    const onResizeOrScroll = (e: Event) => {
+      if (panelRef.current && e.target instanceof Node && panelRef.current.contains(e.target)) {
+        return;
+      }
+      updatePosition();
+    };
+    document.addEventListener('mousedown', onOutside);
+    window.addEventListener('resize', onResizeOrScroll);
+    window.addEventListener('scroll', onResizeOrScroll, true);
+    return () => {
+      document.removeEventListener('mousedown', onOutside);
+      window.removeEventListener('resize', onResizeOrScroll);
+      window.removeEventListener('scroll', onResizeOrScroll, true);
+    };
+  }, [open]);
+
+  const commitValue = (nextVal: string) => {
+    onValueChange?.(nextVal);
+    onChange?.({ target: { value: nextVal } });
+    setOpen(false);
+    setSearch('');
+    triggerRef.current?.focus();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (disabled) return;
+    if (!open) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        setOpen(true);
+      }
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setOpen(false);
+      triggerRef.current?.focus();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightIndex((i) => Math.min(filteredOptions.length - 1, i + 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightIndex((i) => Math.max(0, i - 1));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const target = filteredOptions[highlightIndex];
+      if (target) commitValue(target.value);
+    }
+  };
+
+  const heightClass = size === 'sm' ? 'h-[36px] px-3 text-xs sm:text-sm' : 'h-[40px] px-3.5 text-sm';
+
   return (
-    <div className="flex flex-col gap-1.5 min-w-0">
+    <div className={`flex flex-col gap-1.5 min-w-0 ${className}`}>
       {label && (
         <label htmlFor={selectId} className="text-xs font-medium text-slate-700">
           {label}
-          {rest.required && <span className="text-red-600 ml-0.5">*</span>}
+          {required && <span className="text-red-600 ml-0.5">*</span>}
         </label>
       )}
-      <select
+      <button
+        ref={triggerRef}
         id={selectId}
-        className={`glass-input h-[40px] px-3 text-sm text-slate-900 w-full cursor-pointer ${error ? 'border-red-500!' : ''} ${className}`}
-        {...rest}
+        type="button"
+        role="combobox"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-label={ariaLabel || label || placeholder}
+        disabled={disabled}
+        onClick={() => {
+          if (disabled) return;
+          setOpen((v) => !v);
+        }}
+        onKeyDown={handleKeyDown}
+        className={`glass-input ${heightClass} w-full flex items-center justify-between gap-2 text-left text-slate-900 cursor-pointer disabled:opacity-55 disabled:cursor-not-allowed ${
+          error ? 'border-red-500!' : ''
+        } ${open ? 'bg-white/96 border-[#0071e3] ring-3 ring-[#0071e3]/15' : ''}`}
       >
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
+        <span className={`truncate numeric-text ${selectedOption ? 'text-slate-900' : 'text-slate-400'}`}>
+          {selectedOption ? (selectedOption.shortLabel || selectedOption.label) : placeholder}
+        </span>
+        <ChevronDown
+          className={`w-4 h-4 text-slate-500 shrink-0 transition-transform duration-150 ${
+            open ? 'rotate-180 text-[#0071e3]' : ''
+          }`}
+          aria-hidden="true"
+        />
+      </button>
       {error && <p className="text-xs text-red-600">{error}</p>}
+
+      {open &&
+        coords &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            ref={panelRef}
+            role="listbox"
+            onKeyDown={handleKeyDown}
+            style={{
+              position: 'fixed',
+              top: coords.top,
+              left: coords.left,
+              width: coords.width,
+              maxHeight: coords.maxHeight,
+              zIndex: 260,
+            }}
+            className="glass-surface-elevated !bg-white/95 p-1.5 flex flex-col overflow-hidden"
+          >
+            {searchable && (
+              <div className="p-1 pb-1.5 border-b border-slate-900/[0.06]">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    ref={searchInputRef}
+                    type="search"
+                    value={search}
+                    onChange={(e) => {
+                      setSearch(e.target.value);
+                      setHighlightIndex(0);
+                    }}
+                    placeholder={searchPlaceholder}
+                    className="glass-input h-[32px] pl-8 pr-2.5 text-xs w-full"
+                  />
+                </div>
+              </div>
+            )}
+            <div className="overflow-y-auto flex-1 py-0.5 space-y-0.5">
+              {filteredOptions.length === 0 ? (
+                <div className="px-3 py-4 text-center text-xs text-slate-400">无匹配选项</div>
+              ) : (
+                filteredOptions.map((opt, idx) => {
+                  const selected = opt.value === value;
+                  const highlighted = idx === highlightIndex;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      role="option"
+                      aria-selected={selected}
+                      onMouseEnter={() => setHighlightIndex(idx)}
+                      onClick={() => commitValue(opt.value)}
+                      className={`w-full px-2.5 py-2 rounded-[10px] text-left text-xs sm:text-sm flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                        selected
+                          ? 'bg-[#0071e3]/10 text-[#0071e3] font-medium'
+                          : highlighted
+                            ? 'bg-slate-900/[0.05] text-slate-900'
+                            : 'text-slate-700 hover:bg-slate-900/[0.04]'
+                      }`}
+                    >
+                      <span className="truncate numeric-text">
+                        {opt.label}
+                        {opt.sublabel && (
+                          <span className="ml-1.5 text-xs text-slate-400">{opt.sublabel}</span>
+                        )}
+                      </span>
+                      {selected && <Check className="w-3.5 h-3.5 shrink-0 text-[#0071e3]" />}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
@@ -207,17 +465,26 @@ export function GlassTabs<T extends string>({
   tabs,
   value,
   onChange,
+  showCount = false,
+  variant = 'default',
   className = '',
 }: {
   tabs: Array<{ id: T; label: string; count?: number }>;
   value: T;
   onChange: (id: T) => void;
+  showCount?: boolean;
+  variant?: 'default' | 'embedded';
   className?: string;
 }) {
+  const isEmbedded = variant === 'embedded';
   return (
     <div
       role="tablist"
-      className={`inline-flex items-center flex-wrap gap-1 p-1 rounded-[14px] bg-slate-900/[0.05] border border-white/70 backdrop-blur-md ${className}`}
+      className={
+        isEmbedded
+          ? `inline-flex items-center flex-wrap gap-1 ${className}`
+          : `inline-flex items-center flex-wrap gap-1 p-1 rounded-[14px] bg-slate-900/[0.05] border border-white/70 backdrop-blur-md ${className}`
+      }
     >
       {tabs.map((tab) => {
         const active = tab.id === value;
@@ -228,20 +495,82 @@ export function GlassTabs<T extends string>({
             type="button"
             aria-selected={active}
             onClick={() => onChange(tab.id)}
-            className={`px-3.5 py-1.5 rounded-[10px] text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 cursor-pointer transition-all duration-150 ${
+            className={`px-3.5 py-1.5 rounded-[11px] text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 cursor-pointer transition-all duration-150 ${
               active
-                ? 'bg-white/95 text-slate-900 shadow-[0_2px_8px_rgba(15,23,42,0.08)]'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-white/45'
+                ? isEmbedded
+                  ? 'bg-[#0071e3]/10 text-[#0071e3] font-semibold'
+                  : 'bg-white/95 text-slate-900 shadow-[0_2px_8px_rgba(15,23,42,0.08)]'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-900/[0.04]'
             }`}
           >
             <span>{tab.label}</span>
-            {typeof tab.count === 'number' && (
+            {showCount && typeof tab.count === 'number' && (
               <span className="ml-1.5 numeric-text text-xs text-slate-500">{tab.count}</span>
             )}
           </button>
         );
       })}
     </div>
+  );
+}
+
+export function GlassToolbar({
+  children,
+  className = '',
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`glass-surface px-3 py-2 sm:px-3.5 sm:py-2.5 flex flex-wrap items-center justify-between gap-3 ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Per-row, per-field masked sensitive display with explicit eye toggle.
+ * Never reveals unrelated rows or fields; logs audit entry when unmasked.
+ */
+export function SensitiveFieldCell({
+  maskedValue,
+  rawValue,
+  revealed,
+  canReveal,
+  fieldLabel,
+  onToggle,
+  numericClass = 'numeric-text',
+}: {
+  maskedValue: string;
+  rawValue: string;
+  revealed: boolean;
+  canReveal: boolean;
+  fieldLabel: string;
+  onToggle: () => void;
+  numericClass?: string;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5 max-w-full">
+      <span className={`${numericClass} text-xs text-slate-700 truncate`}>
+        {revealed ? rawValue : maskedValue}
+      </span>
+      {canReveal && (
+        <button
+          type="button"
+          aria-label={revealed ? `隐藏${fieldLabel}` : `查看${fieldLabel}`}
+          title={revealed ? `隐藏${fieldLabel}` : `查看${fieldLabel}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle();
+          }}
+          className="w-6 h-6 rounded-md hover:bg-slate-900/[0.06] inline-flex items-center justify-center text-slate-400 hover:text-[#0071e3] cursor-pointer shrink-0 transition-colors"
+        >
+          {revealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+        </button>
+      )}
+    </span>
   );
 }
 
@@ -316,14 +645,14 @@ export function PageHeader({
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
       <div className="min-w-0">
-        <h1 className="text-2xl sm:text-[26px] font-semibold tracking-tight text-slate-900 text-balance">
+        <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-slate-900 text-balance">
           {title}
         </h1>
-        {subtitle && <p className="text-sm text-slate-600 mt-1">{subtitle}</p>}
+        {subtitle && <p className="text-xs sm:text-sm text-slate-500 mt-1">{subtitle}</p>}
       </div>
-      {actions && <div className="flex items-center flex-wrap gap-2.5 shrink-0">{actions}</div>}
+      {actions && <div className="flex items-center flex-wrap gap-2 shrink-0">{actions}</div>}
     </div>
   );
 }
@@ -405,6 +734,26 @@ export function PermissionDeniedState({ moduleLabel }: { moduleLabel: string }) 
   );
 }
 
+export function AllActivityReadonlyNotice({
+  onSelectActivity,
+}: {
+  onSelectActivity?: () => void;
+}) {
+  return (
+    <div className="glass-surface-subtle px-4 py-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-700">
+      <span className="flex items-center gap-2">
+        <Info className="w-4 h-4 text-[#0071e3] shrink-0" />
+        当前为「全部活动」汇总视图，仅支持查看与筛选；新增、编辑、发证或核销请先在顶部切换至具体活动。
+      </span>
+      {onSelectActivity && (
+        <GlassButton size="sm" variant="secondary" onClick={onSelectActivity}>
+          前往活动列表
+        </GlassButton>
+      )}
+    </div>
+  );
+}
+
 export function OfflineBanner({ onReconnect }: { onReconnect?: () => void }) {
   return (
     <div
@@ -435,7 +784,7 @@ export function ToastContainer({
   return (
     <div
       aria-live="polite"
-      className="fixed bottom-5 left-4 right-4 sm:left-auto sm:right-5 sm:w-[380px] z-[200] flex flex-col gap-2.5 pointer-events-none"
+      className="fixed bottom-5 left-4 right-4 sm:left-auto sm:right-5 sm:w-[380px] z-[240] flex flex-col gap-2.5 pointer-events-none"
     >
       {toasts.map((t) => (
         <div

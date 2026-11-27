@@ -21,6 +21,7 @@ export type ScannerStatus =
 
 export interface GlassScannerProps {
   offline?: boolean;
+  lockedReason?: string;
   busy?: boolean;
   onDetected: (code: string) => void;
   onScanError?: (message: string) => void;
@@ -28,25 +29,27 @@ export interface GlassScannerProps {
 
 export function GlassScanner({
   offline = false,
+  lockedReason,
   busy = false,
   onDetected,
   onScanError,
 }: GlassScannerProps) {
+  const isBlocked = offline || Boolean(lockedReason);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const readerRef = useRef<BrowserQRCodeReader | null>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastDecodedRef = useRef<{ value: string; at: number }>({ value: '', at: 0 });
-  const offlineRef = useRef(offline);
+  const blockedRef = useRef(isBlocked);
   const busyRef = useRef(busy);
   const onDetectedRef = useRef(onDetected);
 
   useEffect(() => {
-    offlineRef.current = offline;
+    blockedRef.current = isBlocked;
     busyRef.current = busy;
     onDetectedRef.current = onDetected;
-  }, [offline, busy, onDetected]);
+  }, [isBlocked, busy, onDetected]);
 
   const [status, setStatus] = useState<ScannerStatus>('initializing');
   const [statusMessage, setStatusMessage] = useState<string>('');
@@ -78,7 +81,7 @@ export function GlassScanner({
   }, []);
 
   const emitCode = useCallback((raw: string) => {
-    if (offlineRef.current || busyRef.current) return;
+    if (blockedRef.current || busyRef.current) return;
     const cleaned = raw.trim();
     if (!cleaned) return;
     const now = Date.now();
@@ -227,8 +230,8 @@ export function GlassScanner({
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    if (offline) {
-      onScanError?.('当前已断网');
+    if (isBlocked) {
+      onScanError?.(lockedReason || '当前已断网');
       return;
     }
 
@@ -268,7 +271,7 @@ export function GlassScanner({
         />
 
         {/* Four-Corner Scanning Reticle & Animated Laser Sweep */}
-        {status === 'scanning' && !offline && (
+        {status === 'scanning' && !isBlocked && (
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
             <div className="relative w-52 h-52 sm:w-56 sm:h-56">
               <span className="absolute top-0 left-0 w-7 h-7 border-t-[3px] border-l-[3px] border-[#38bdf8] rounded-tl-xl" />
@@ -286,16 +289,25 @@ export function GlassScanner({
           </div>
         )}
 
-        {/* Offline Overlay */}
-        {offline && (
+        {/* Offline or Activity Scope Lock Overlay */}
+        {isBlocked && (
           <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center text-white space-y-2">
-            <WifiOff className="w-8 h-8 text-red-400" />
-            <p className="text-sm font-semibold">网络已断开</p>
+            {offline ? (
+              <>
+                <WifiOff className="w-8 h-8 text-red-400" />
+                <p className="text-sm font-semibold">网络已断开</p>
+              </>
+            ) : (
+              <>
+                <ScanLine className="w-8 h-8 text-[#38bdf8]" />
+                <p className="text-sm font-semibold">{lockedReason}</p>
+              </>
+            )}
           </div>
         )}
 
         {/* Standby / Fallback States with Subtle Reticle */}
-        {!offline && status !== 'scanning' && (
+        {!isBlocked && status !== 'scanning' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-white/90 space-y-3 bg-gradient-to-b from-slate-900 to-slate-950">
             <div className="relative w-44 h-44 flex flex-col items-center justify-center p-4">
               <span className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-[#38bdf8]/45 rounded-tl-xl" />
@@ -392,7 +404,7 @@ export function GlassScanner({
           <GlassButton
             size="sm"
             variant="ghost"
-            disabled={offline || busy}
+            disabled={isBlocked || busy}
             onClick={() => fileInputRef.current?.click()}
           >
             <ImageUp className="w-3.5 h-3.5" />

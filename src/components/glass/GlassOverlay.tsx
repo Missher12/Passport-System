@@ -1,8 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Camera, RefreshCw, ShieldCheck, Upload, X } from 'lucide-react';
+import { Camera, ShieldCheck, Upload, X } from 'lucide-react';
 import { GlassButton, GlassInput } from './GlassPrimitives';
 import { getApiClient } from '../../services/api';
-import { ASSET_PATHS } from '../../services/adapters/seedData';
 import type { CaptchaChallenge } from '../../types/domain';
 
 export function GlassDialog({
@@ -174,7 +173,7 @@ export function GlassUpload({
   const startCamera = async () => {
     setCameraError(null);
     if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraError('当前浏览器环境无可用摄像头设备，可使用相册上传或演示人像拍摄。');
+      setCameraError('当前浏览器不支持摄像头访问，请通过相册上传照片。');
       return;
     }
     try {
@@ -188,7 +187,7 @@ export function GlassUpload({
         }
       }, 60);
     } catch {
-      setCameraError('未获得摄像头权限或无物理摄像头，请通过相册上传或使用标准人像示例。');
+      setCameraError('未获得摄像头权限或未检测到摄像头，请通过相册上传照片。');
     }
   };
 
@@ -247,20 +246,6 @@ export function GlassUpload({
             <GlassButton size="sm" variant="secondary" onClick={startCamera}>
               <Camera className="w-3.5 h-3.5" />
               摄像头拍摄
-            </GlassButton>
-            <GlassButton
-              size="sm"
-              variant="ghost"
-              onClick={() =>
-                onChange(
-                  value === ASSET_PATHS.avatarFemale
-                    ? ASSET_PATHS.avatarMale
-                    : ASSET_PATHS.avatarFemale,
-                )
-              }
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              使用演示自拍
             </GlassButton>
           </div>
           {cameraError && <p className="text-xs text-amber-700">{cameraError}</p>}

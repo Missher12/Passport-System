@@ -10,6 +10,7 @@ import {
   GlassInput,
   GlassSelect,
   GlassTabs,
+  GlassToolbar,
   PermissionDeniedState,
   StatusIndicator,
 } from '../../components/glass/GlassPrimitives';
@@ -168,7 +169,7 @@ export function ActivitiesPage() {
         pushToast({
           tone: 'success',
           title: `已创建活动「${created.name}」`,
-          detail: '已自动初始化默认证件类别并切换为当前上下文（演示结果）',
+          detail: '已初始化默认证件类别并切换至该活动',
         });
       }
       setHasUnsavedChanges(false);
@@ -201,36 +202,37 @@ export function ActivitiesPage() {
 
   return (
     <PageContainer className="space-y-5">
-      {/* Unified Filter & Create Toolbar */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+      {/* Unified Liquid Glass Toolbar */}
+      <GlassToolbar>
         <GlassTabs
+          variant="embedded"
           value={statusFilter}
           onChange={setStatusFilter}
           tabs={[
-            { id: 'all', label: '全部', count: activities.length },
-            { id: 'active', label: '进行中', count: activities.filter((a) => a.status === 'active').length },
-            { id: 'draft', label: '即将开始', count: activities.filter((a) => a.status === 'draft').length },
-            { id: 'paused', label: '已暂停', count: activities.filter((a) => a.status === 'paused').length },
-            { id: 'archived', label: '已归档', count: activities.filter((a) => a.status === 'archived').length },
+            { id: 'all', label: '全部' },
+            { id: 'active', label: '进行中' },
+            { id: 'draft', label: '即将开始' },
+            { id: 'paused', label: '已暂停' },
+            { id: 'archived', label: '已归档' },
           ]}
         />
-        <div className="flex items-center gap-2.5">
-          <div className="relative flex-1 sm:w-56 sm:flex-none">
+        <div className="flex items-center gap-2.5 w-full lg:w-auto">
+          <div className="relative flex-1 sm:w-60 lg:flex-none">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="搜索活动..."
-              className="glass-input h-[38px] pl-9 pr-3 text-sm w-full"
+              placeholder="搜索活动名称、地点或编码..."
+              className="glass-input h-[36px] pl-9 pr-3 text-sm w-full"
             />
           </div>
-          <GlassButton variant="primary" onClick={openCreate}>
+          <GlassButton size="sm" variant="primary" onClick={openCreate} className="shrink-0">
             <Plus className="w-4 h-4" />
-            创建新活动
+            新建活动
           </GlassButton>
         </div>
-      </div>
+      </GlassToolbar>
 
       {/* Single-Row Horizontal Activity Cards */}
       {filtered.length === 0 ? (

@@ -25,11 +25,22 @@ export interface ActivityTimeWindows {
   redemptionValidEnd: string;
 }
 
+export type CustomFieldType =
+  | 'text'
+  | 'textarea'
+  | 'radio'
+  | 'checkbox'
+  | 'select'
+  | 'date'
+  | 'number';
+
 export interface CustomFieldDefinition {
   id: string;
   label: string;
+  type?: CustomFieldType;
   required: boolean;
   placeholder?: string;
+  options?: string[];
 }
 
 export interface Activity {
@@ -181,6 +192,7 @@ export interface GiftTicket {
   countryCode: string;
   phone: string;
   useDate: string;
+  availableDates?: string[];
   avatarUrl?: string;
   customFields: Record<string, string>;
   status: GiftTicketStatus;
@@ -189,6 +201,18 @@ export interface GiftTicket {
   redeemedBy?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface InvitedTicketMeta {
+  activityId: string;
+  activityName: string;
+  batchName: string;
+  ticketCode: string;
+  status: GiftTicketStatus;
+  availableDates: string[];
+  useDate: string;
+  customFields: CustomFieldDefinition[];
+  alreadyCompleted: boolean;
 }
 
 export type CredentialKind = 'certificate' | 'gift';
@@ -275,6 +299,7 @@ export interface Department {
   name: string;
   description: string;
   memberCount: number;
+  active?: boolean;
   createdAt: string;
 }
 
@@ -284,6 +309,7 @@ export interface RoleDefinition {
   name: string;
   description: string;
   isPreset: boolean;
+  active?: boolean;
   modules: PermissionModule[];
   defaultRedemptionMode: RedemptionMode;
   canViewUnmaskedSensitive: boolean;
@@ -407,11 +433,16 @@ export type AdminNavSection =
   | 'certificates'
   | 'gifts'
   | 'redemption'
+  | 'admin_settings'
+  | 'admin_profile'
+  | 'admin_password'
+  | 'admin_general'
+  | 'admin_redemption_settings'
+  | 'admin_security'
   | 'admin_users'
   | 'admin_roles'
   | 'admin_departments'
-  | 'admin_audit'
-  | 'admin_settings';
+  | 'admin_audit';
 
 export interface ExhibitorVerifyInput {
   activityId: string;

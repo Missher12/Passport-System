@@ -10,18 +10,24 @@ import {
 import { useApp } from '../../app/providers/AppContext';
 import { PageContainer } from '../../components/layout/PageContainer';
 import {
+  AllActivityReadonlyNotice,
   GlassBadge,
   GlassButton,
   GlassCard,
   GlassInput,
   GlassSelect,
   GlassTabs,
+  GlassToolbar,
   PermissionDeniedState,
   StatusIndicator,
 } from '../../components/glass/GlassPrimitives';
 import { GlassDialog, GlassUpload } from '../../components/glass/GlassOverlay';
 import { GlassTable, type GlassTableColumn } from '../../components/glass/GlassTable';
-import { ElectronicCredentialCard, GlassQRCode, formatValidDateRange } from '../../components/qr/GlassQRCode';
+import {
+  ElectronicCredentialCard,
+  GlassQRCode,
+  formatValidDateRange,
+} from '../../components/qr/GlassQRCode';
 import { getApiClient } from '../../services/api';
 import {
   CERTIFICATE_STATUS_LABELS,
@@ -38,8 +44,18 @@ import type {
   OnsiteExtraToken,
 } from '../../types/domain';
 
+const COUNTRY_CODE_OPTIONS = COUNTRY_CODES.map((c) => ({
+  value: c.code,
+  label: `${c.code} ${c.label}`,
+  shortLabel: c.code,
+}));
+
 function certTone(status: CertificateStatus) {
-  if (status === 'badge_claimed' || status === 'credential_generated' || status === 'avatar_completed') {
+  if (
+    status === 'badge_claimed' ||
+    status === 'credential_generated' ||
+    status === 'avatar_completed'
+  ) {
     return 'success' as const;
   }
   if (status === 'frozen' || status === 'voided') return 'danger' as const;
@@ -47,28 +63,38 @@ function certTone(status: CertificateStatus) {
 }
 
 export function CertificatesPage() {
-  const { user, activeActivity, activities, realtimeVersion, canAccessModule, switchPortal, pushToast } =
-    useApp();
+  const {
+    user,
+    activeActivityId,
+    activeActivity,
+    activities,
+    realtimeVersion,
+    canAccessModule,
+    switchPortal,
+    pushToast,
+  } = useApp();
 
-  const currentAct = activeActivity ?? activities[0] ?? null;
-  const [tab, setTab] = useState<'booth_claim' | 'individual' | 'onsite_extra' | 'categories'>('booth_claim');
+  const isAllScope = activeActivityId === 'ALL';
+  const currentAct = isAllScope ? null : (activeActivity ?? activities[0] ?? null);
+  const scopeActivityId = isAllScope ? 'ALL' : (currentAct?.id ?? '');
+
+  const [tab, setTab] = useState<'booth_claim' | 'individual' | 'onsite_extra' | 'categories'>(
+    'booth_claim',
+  );
   const [exhibitors, setExhibitors] = useState<Exhibitor[]>([]);
   const [members, setMembers] = useState<ExhibitorMember[]>([]);
   const [categories, setCategories] = useState<CertificateCategory[]>([]);
   const [extraTokens, setExtraTokens] = useState<OnsiteExtraToken[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Booth batch claim state
   const [selectedBoothId, setSelectedBoothId] = useState<string>('');
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [memberFilter, setMemberFilter] = useState<'all' | 'unclaimed' | 'claimed'>('all');
   const [previewMember, setPreviewMember] = useState<ExhibitorMember | null>(null);
 
-  // Individual claim state
-  const [scanCode, setScanCode] = useState('A01-02');
+  const [scanCode, setScanCode] = useState('');
   const [foundMember, setFoundMember] = useState<ExhibitorMember | null>(null);
 
-  // Onsite extra badge state (Chapter 12)
   const [extraExId, setExtraExId] = useState('');
   const [extraVerify, setExtraVerify] = useState({
     boothNumber: '',
@@ -93,7 +119,6 @@ export function CertificatesPage() {
     avatarUrl: '',
   });
 
-  // Category modal state
   const [catDialog, setCatDialog] = useState<{
     id?: string;
     name: string;
@@ -102,32 +127,33 @@ export function CertificatesPage() {
   } | null>(null);
 
   const loadData = async () => {
-    if (!currentAct) return;
+    if (!scopeActivityId) return;
     setLoading(true);
     try {
       const api = getApiClient();
       const [ex, mem, cats, tks] = await Promise.all([
-        api.exhibitors.list(currentAct.id),
-        api.members.list(currentAct.id),
-        api.certificates.listCategories(currentAct.id),
-        api.certificates.listOnsiteExtraTokens(currentAct.id),
+        api.exhibitors.list(scopeActivityId),
+        api.members.list(scopeActivityId),
+        api.certificates.listCategories(scopeActivityId),
+        api.certificates.listOnsiteExtraTokens(scopeActivityId),
       ]);
       setExhibitors(ex);
       setMembers(mem);
       setCategories(cats);
       setExtraTokens(tks);
-      if (!selectedBoothId && ex[0]) setSelectedBoothId(ex[0].id);
-      if (!extraExId && ex[0]) {
-        setExtraExId(ex[0].id);
-      }
+      setSelectedBoothId((prev) => (ex.some((e) => e.id === prev) ? prev : (ex[0]?.id ?? '')));
+      setExtraExId((prev) => (ex.some((e) => e.id === prev) ? prev : (ex[0]?.id ?? '')));
+      setSelectedMemberIds([]);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    setFoundMember(null);
+    setIssuedToken(null);
     loadData();
-  }, [currentAct?.id, realtimeVersion]);
+  }, [scopeActivityId, realtimeVersion]);
 
   const boothStatsRows = useMemo(() => {
     return exhibitors.map((ex) => {
@@ -155,6 +181,11 @@ export function CertificatesPage() {
     });
   }, [members, selectedBoothId, memberFilter]);
 
+  const activityNameById = useMemo(
+    () => Object.fromEntries(activities.map((a) => [a.id, a.name])),
+    [activities],
+  );
+
   if (!canAccessModule('certificates')) {
     return (
       <PageContainer>
@@ -163,10 +194,20 @@ export function CertificatesPage() {
     );
   }
 
-  if (!currentAct) return null;
+  if (!isAllScope && !currentAct) return null;
+
+  const ensureConcreteActivity = () => {
+    if (isAllScope || !currentAct) {
+      pushToast({ tone: 'warning', title: '请先在顶部切换至具体活动后再执行操作' });
+      return false;
+    }
+    return true;
+  };
 
   const handleBatchClaim = async () => {
-    if (!user || !selectedBoothId || selectedMemberIds.length === 0) return;
+    if (!ensureConcreteActivity() || !currentAct || !user || !selectedBoothId || selectedMemberIds.length === 0) {
+      return;
+    }
     try {
       const claimed = await getApiClient().certificates.claimBatch(
         currentAct.id,
@@ -177,8 +218,8 @@ export function CertificatesPage() {
       setSelectedMemberIds([]);
       pushToast({
         tone: 'success',
-        title: `展位批量领取成功（${claimed.length} 张实体证件）`,
-        detail: `已记录具体人员编号、领取时间及操作人 ${user.displayName}（演示结果）`,
+        title: `已确认领取 ${claimed.length} 张证件`,
+        detail: `操作人：${user.displayName}`,
       });
       await loadData();
     } catch (err) {
@@ -192,6 +233,10 @@ export function CertificatesPage() {
 
   const handleLookupIndividual = () => {
     const cleaned = scanCode.trim().toUpperCase();
+    if (!cleaned) {
+      pushToast({ tone: 'warning', title: '请输入人员编号' });
+      return;
+    }
     const match = members.find((m) => m.memberCode.toUpperCase() === cleaned) ?? null;
     setFoundMember(match);
     if (!match) {
@@ -200,7 +245,7 @@ export function CertificatesPage() {
   };
 
   const handleIndividualClaim = async () => {
-    if (!user || !foundMember) return;
+    if (!ensureConcreteActivity() || !currentAct || !user || !foundMember) return;
     try {
       const updated = await getApiClient().certificates.claimIndividual(
         currentAct.id,
@@ -210,7 +255,7 @@ export function CertificatesPage() {
       setFoundMember(updated);
       pushToast({
         tone: 'success',
-        title: `${updated.memberCode} ${updated.name} 实体证件领取已确认`,
+        title: `${updated.memberCode} ${updated.name} 证件领取已确认`,
       });
       await loadData();
     } catch (err) {
@@ -240,7 +285,7 @@ export function CertificatesPage() {
 
   const handleIssueOnsiteToken = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !extraExId) return;
+    if (!ensureConcreteActivity() || !currentAct || !user || !extraExId) return;
     try {
       const tk = await getApiClient().certificates.createOnsiteExtraToken(
         {
@@ -259,15 +304,14 @@ export function CertificatesPage() {
       setExtraReason('');
       pushToast({
         tone: 'success',
-        title: `已签发一次性现场加证二维码（${tk.token}）`,
-        detail: '展商扫码填报提交后自动递增编号并失效（演示结果）',
+        title: `已生成现场加证码（${tk.token}）`,
       });
       await loadData();
     } catch (err) {
       pushToast({
         tone: 'error',
         title: '现场加证签发失败',
-        detail: err instanceof Error ? err.message : '请核对展商 7 项信息与原因',
+        detail: err instanceof Error ? err.message : '请核对展商信息与原因',
       });
     }
   };
@@ -282,9 +326,9 @@ export function CertificatesPage() {
       );
       pushToast({
         tone: 'success',
-        title: `现场加证登记完成：${res.member.memberCode} ${res.member.name}`,
+        title: `加证登记完成：${res.member.memberCode} ${res.member.name}`,
         detail: res.tokenState.used
-          ? '该一次性加证二维码已使用失效，审计日志已记录（演示结果）'
+          ? '该一次性加证码已失效'
           : `剩余可用次数：${res.tokenState.extraCount - res.tokenState.usedCount}`,
       });
       setExtraMemberForm({
@@ -308,6 +352,19 @@ export function CertificatesPage() {
   };
 
   const statsColumns: GlassTableColumn<(typeof boothStatsRows)[number]>[] = [
+    ...(isAllScope
+      ? [
+          {
+            key: 'activity',
+            header: '所属活动',
+            render: (r: (typeof boothStatsRows)[number]) => (
+              <span className="text-xs text-slate-600">
+                {activityNameById[r.exhibitor.activityId] ?? r.exhibitor.activityId}
+              </span>
+            ),
+          },
+        ]
+      : []),
     {
       key: 'booth',
       header: '展商摊位',
@@ -329,31 +386,31 @@ export function CertificatesPage() {
     },
     {
       key: 'orig',
-      header: '原申请人数',
+      header: '原名额',
       align: 'right',
       render: (r) => <span className="table-number">{r.originalQuota}</span>,
     },
     {
       key: 'reg',
-      header: '实际登记人数',
+      header: '已登记',
       align: 'right',
       render: (r) => <span className="table-number font-medium">{r.registeredCount}</span>,
     },
     {
       key: 'extra',
-      header: '现场新增人数',
+      header: '现场加证',
       align: 'right',
       render: (r) => <span className="table-number text-[#0071e3]">{r.onsiteExtra}</span>,
     },
     {
       key: 'claimed',
-      header: '已领取人数',
+      header: '已领取',
       align: 'right',
       render: (r) => <span className="table-number text-[#15803d] font-medium">{r.claimedCount}</span>,
     },
     {
       key: 'unclaimed',
-      header: '未领取人数',
+      header: '未领取',
       align: 'right',
       render: (r) => <span className="table-number text-[#b45309]">{r.unclaimedCount}</span>,
     },
@@ -363,7 +420,9 @@ export function CertificatesPage() {
     {
       key: 'code',
       header: '人员编号',
-      render: (m) => <span className="order-number font-semibold text-[#0071e3]">{m.memberCode}</span>,
+      render: (m) => (
+        <span className="order-number font-semibold text-[#0071e3]">{m.memberCode}</span>
+      ),
     },
     {
       key: 'name',
@@ -377,7 +436,7 @@ export function CertificatesPage() {
     },
     {
       key: 'status',
-      header: '当前状态',
+      header: '状态',
       render: (m) => (
         <StatusIndicator tone={certTone(m.status)} label={CERTIFICATE_STATUS_LABELS[m.status]} />
       ),
@@ -403,12 +462,12 @@ export function CertificatesPage() {
           <GlassButton size="sm" variant="secondary" onClick={() => setPreviewMember(m)}>
             凭证
           </GlassButton>
-          {m.status !== 'frozen' && m.status !== 'voided' && (
+          {!isAllScope && m.status !== 'frozen' && m.status !== 'voided' && (
             <GlassButton
               size="sm"
               variant="ghost"
               onClick={async () => {
-                if (!user) return;
+                if (!user || !currentAct) return;
                 await getApiClient().members.setStatus(
                   currentAct.id,
                   m.id,
@@ -423,12 +482,12 @@ export function CertificatesPage() {
               冻结
             </GlassButton>
           )}
-          {m.status === 'frozen' && (
+          {!isAllScope && m.status === 'frozen' && (
             <GlassButton
               size="sm"
               variant="ghost"
               onClick={async () => {
-                if (!user) return;
+                if (!user || !currentAct) return;
                 await getApiClient().members.setStatus(
                   currentAct.id,
                   m.id,
@@ -448,18 +507,27 @@ export function CertificatesPage() {
     },
   ];
 
+  const previewActivityName = previewMember
+    ? (activityNameById[previewMember.activityId] ?? currentAct?.name ?? '')
+    : '';
+
   return (
     <PageContainer className="space-y-5">
-      <GlassTabs
-        value={tab}
-        onChange={setTab}
-        tabs={[
-          { id: 'booth_claim', label: '展位发证', count: exhibitors.length },
-          { id: 'individual', label: '个人扫码领证' },
-          { id: 'onsite_extra', label: '现场加证', count: extraTokens.length },
-          { id: 'categories', label: '证件类别', count: categories.length },
-        ]}
-      />
+      {isAllScope && <AllActivityReadonlyNotice />}
+
+      <GlassToolbar>
+        <GlassTabs
+          variant="embedded"
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { id: 'booth_claim', label: '展位发证' },
+            { id: 'individual', label: '个人领证' },
+            { id: 'onsite_extra', label: '现场加证' },
+            { id: 'categories', label: '证件类别' },
+          ]}
+        />
+      </GlassToolbar>
 
       {tab === 'booth_claim' && (
         <div className="space-y-6">
@@ -472,29 +540,28 @@ export function CertificatesPage() {
 
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <h2 className="text-base font-semibold text-slate-900">展位具体人员领取明细</h2>
-                <select
+              <div className="flex flex-wrap items-center gap-3">
+                <h2 className="text-base font-semibold text-slate-900">展位人员明细</h2>
+                <GlassSelect
+                  size="sm"
                   aria-label="选择展商"
                   value={selectedBoothId}
-                  onChange={(e) => {
-                    setSelectedBoothId(e.target.value);
+                  onValueChange={(val) => {
+                    setSelectedBoothId(val);
                     setSelectedMemberIds([]);
                   }}
-                  className="glass-input h-[36px] px-3 text-sm"
-                >
-                  {exhibitors.map((ex) => (
-                    <option key={ex.id} value={ex.id}>
-                      {ex.boothNumber} · {ex.boothName}
-                    </option>
-                  ))}
-                </select>
+                  className="w-60"
+                  options={exhibitors.map((ex) => ({
+                    value: ex.id,
+                    label: `${ex.boothNumber} · ${ex.boothName}`,
+                  }))}
+                />
               </div>
               <GlassTabs
                 value={memberFilter}
                 onChange={setMemberFilter}
                 tabs={[
-                  { id: 'all', label: '全部人员' },
+                  { id: 'all', label: '全部' },
                   { id: 'unclaimed', label: '未领取' },
                   { id: 'claimed', label: '已领取' },
                 ]}
@@ -505,13 +572,13 @@ export function CertificatesPage() {
               rows={activeBoothMembers}
               columns={memberClaimColumns}
               searchable={false}
-              selectable
+              selectable={!isAllScope}
               selectedIds={selectedMemberIds}
               onSelectionChange={setSelectedMemberIds}
               batchActions={
                 <GlassButton size="sm" variant="primary" onClick={handleBatchClaim}>
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  批量确认领取实体证件
+                  批量确认领证
                 </GlassButton>
               }
             />
@@ -534,7 +601,7 @@ export function CertificatesPage() {
               </div>
               <GlassButton variant="primary" onClick={handleLookupIndividual}>
                 <QrCode className="w-4 h-4" />
-                查询人员
+                查询
               </GlassButton>
             </div>
 
@@ -555,7 +622,9 @@ export function CertificatesPage() {
                 </div>
                 <div className="flex-1 min-w-0 space-y-1 text-center sm:text-left">
                   <div className="text-base font-semibold text-slate-900">
-                    <span className="text-[#0071e3] order-number mr-2">{foundMember.memberCode}</span>
+                    <span className="text-[#0071e3] order-number mr-2">
+                      {foundMember.memberCode}
+                    </span>
                     {foundMember.name}
                   </div>
                   <p className="text-xs text-slate-600">
@@ -570,10 +639,10 @@ export function CertificatesPage() {
                 </div>
                 <GlassButton
                   variant="primary"
-                  disabled={foundMember.status === 'badge_claimed'}
+                  disabled={isAllScope || foundMember.status === 'badge_claimed'}
                   onClick={handleIndividualClaim}
                 >
-                  {foundMember.status === 'badge_claimed' ? '已完成领取' : '确认领取实体证'}
+                  {foundMember.status === 'badge_claimed' ? '已领取' : '确认领证'}
                 </GlassButton>
               </div>
             )}
@@ -593,21 +662,22 @@ export function CertificatesPage() {
               <div className="flex flex-wrap items-end gap-2">
                 <div className="flex-1 min-w-[200px]">
                   <GlassSelect
-                    label="1. 选择对应展商"
+                    label="选择展商"
                     value={extraExId}
-                    onChange={(e) => setExtraExId(e.target.value)}
+                    onValueChange={setExtraExId}
                     options={exhibitors.map((ex) => ({
                       value: ex.id,
-                      label: `${ex.boothNumber} · ${ex.boothName}（原名额 ${ex.quota} / 已加证 ${ex.onsiteExtraCount}）`,
+                      label: `${ex.boothNumber} · ${ex.boothName}`,
                     }))}
                   />
                 </div>
                 <GlassButton
                   size="md"
                   variant="secondary"
+                  disabled={isAllScope || !extraExId}
                   onClick={() => prefillExtraVerify(extraExId)}
                 >
-                  回填该展商 7 项档案供核对
+                  带入展商档案
                 </GlassButton>
               </div>
 
@@ -626,7 +696,7 @@ export function CertificatesPage() {
                   onChange={(e) => setExtraVerify({ ...extraVerify, boothName: e.target.value })}
                 />
                 <GlassInput
-                  label="主要联系人姓名"
+                  label="主要联系人"
                   required
                   value={extraVerify.primaryContactName}
                   onChange={(e) =>
@@ -636,8 +706,8 @@ export function CertificatesPage() {
                 <GlassSelect
                   label="证件类型"
                   value={extraVerify.primaryIdType}
-                  onChange={(e) =>
-                    setExtraVerify({ ...extraVerify, primaryIdType: e.target.value as IdType })
+                  onValueChange={(val) =>
+                    setExtraVerify({ ...extraVerify, primaryIdType: val as IdType })
                   }
                   options={Object.entries(ID_TYPE_LABELS).map(([v, l]) => ({ value: v, label: l }))}
                 />
@@ -658,7 +728,7 @@ export function CertificatesPage() {
                   onChange={(e) => setExtraVerify({ ...extraVerify, phone: e.target.value })}
                 />
                 <GlassInput
-                  label="唯一商务密码"
+                  label="商务密码"
                   required
                   numeric
                   value={extraVerify.businessPassword}
@@ -667,7 +737,7 @@ export function CertificatesPage() {
                   }
                 />
                 <GlassInput
-                  label="本次新增人数"
+                  label="新增人数"
                   type="number"
                   min={1}
                   max={20}
@@ -679,16 +749,16 @@ export function CertificatesPage() {
               </div>
 
               <GlassInput
-                label="新增原因（必填，永久写入审计日志）"
+                label="新增原因"
                 required
                 value={extraReason}
                 onChange={(e) => setExtraReason(e.target.value)}
-                placeholder="例如：展台客流激增临时增派两名签售引导员"
+                placeholder="填写加证原因"
               />
 
               <div className="flex justify-end">
-                <GlassButton type="submit" variant="primary">
-                  核验并生成一次性加证二维码
+                <GlassButton type="submit" variant="primary" disabled={isAllScope}>
+                  生成一次性加证码
                 </GlassButton>
               </div>
             </form>
@@ -698,7 +768,7 @@ export function CertificatesPage() {
             {issuedToken ? (
               <GlassCard elevated className="text-center space-y-3">
                 <h3 className="text-base font-semibold text-slate-900">
-                  {issuedToken.boothNumber} 一次性现场加证二维码
+                  {issuedToken.boothNumber} 现场加证二维码
                 </h3>
                 <p className="text-xs text-slate-500">
                   原因：{issuedToken.reason} · 已用{' '}
@@ -714,7 +784,7 @@ export function CertificatesPage() {
                 </p>
                 <StatusIndicator
                   tone={issuedToken.used ? 'danger' : 'success'}
-                  label={issuedToken.used ? '已使用失效' : '等待展商扫码填报'}
+                  label={issuedToken.used ? '已失效' : '待登记'}
                 />
                 {!issuedToken.used && (
                   <div className="flex flex-wrap justify-center gap-2 pt-2">
@@ -723,7 +793,7 @@ export function CertificatesPage() {
                       variant="primary"
                       onClick={() => setSimulateScanToken(issuedToken)}
                     >
-                      模拟展商扫码登记资料
+                      现场填报
                     </GlassButton>
                     <GlassButton
                       size="sm"
@@ -733,7 +803,7 @@ export function CertificatesPage() {
                       }
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
-                      外部端打开
+                      展商端打开
                     </GlassButton>
                   </div>
                 )}
@@ -741,12 +811,12 @@ export function CertificatesPage() {
             ) : (
               <GlassCard className="text-center py-10 space-y-2">
                 <ShieldAlert className="w-8 h-8 text-slate-400 mx-auto" />
-                <p className="text-sm font-medium text-slate-800">尚未生成一次性加证码</p>
+                <p className="text-sm font-medium text-slate-800">尚未生成加证码</p>
               </GlassCard>
             )}
 
             <GlassCard className="space-y-3">
-              <h3 className="text-sm font-semibold text-slate-900">近期现场加证记录</h3>
+              <h3 className="text-sm font-semibold text-slate-900">近期加证记录</h3>
               <div className="divide-y divide-slate-900/[0.06] text-xs">
                 {extraTokens.map((t) => (
                   <div key={t.id} className="py-2.5 flex items-center justify-between gap-2">
@@ -755,7 +825,7 @@ export function CertificatesPage() {
                         {t.boothNumber} · {t.token}
                       </div>
                       <div className="text-slate-500 mt-0.5">
-                        {t.reason} · 操作人 {t.operatorName}
+                        {t.reason} · {t.operatorName}
                       </div>
                     </div>
                     <StatusIndicator
@@ -775,10 +845,11 @@ export function CertificatesPage() {
           <div className="flex justify-end">
             <GlassButton
               variant="primary"
+              disabled={isAllScope}
               onClick={() => setCatDialog({ name: '', color: '#0071e3', enabled: true })}
             >
               <Plus className="w-4 h-4" />
-              新增证件类别
+              新增类别
             </GlassButton>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -796,6 +867,7 @@ export function CertificatesPage() {
                 <GlassButton
                   size="sm"
                   variant="secondary"
+                  disabled={isAllScope}
                   onClick={() =>
                     setCatDialog({
                       id: cat.id,
@@ -829,8 +901,8 @@ export function CertificatesPage() {
             <GlassSelect
               label="证件类型"
               value={extraMemberForm.idType}
-              onChange={(e) =>
-                setExtraMemberForm({ ...extraMemberForm, idType: e.target.value as IdType })
+              onValueChange={(val) =>
+                setExtraMemberForm({ ...extraMemberForm, idType: val as IdType })
               }
               options={Object.entries(ID_TYPE_LABELS).map(([v, l]) => ({ value: v, label: l }))}
             />
@@ -843,30 +915,27 @@ export function CertificatesPage() {
                 setExtraMemberForm({ ...extraMemberForm, idNumber: e.target.value })
               }
             />
-            <div className="grid grid-cols-5 gap-2">
-              <div className="col-span-2">
-                <GlassSelect
-                  label="区号"
-                  value={extraMemberForm.countryCode}
-                  onChange={(e) =>
-                    setExtraMemberForm({ ...extraMemberForm, countryCode: e.target.value })
-                  }
-                  options={COUNTRY_CODES.map((c) => ({ value: c.code, label: c.code }))}
-                />
-              </div>
-              <div className="col-span-3">
-                <GlassInput
-                  label="联系电话"
-                  required
-                  numeric
-                  value={extraMemberForm.phone}
-                  onChange={(e) => setExtraMemberForm({ ...extraMemberForm, phone: e.target.value })}
-                />
-              </div>
+            <div className="grid grid-cols-[120px_1fr] gap-2">
+              <GlassSelect
+                label="区号"
+                searchable
+                value={extraMemberForm.countryCode}
+                onValueChange={(val) =>
+                  setExtraMemberForm({ ...extraMemberForm, countryCode: val })
+                }
+                options={COUNTRY_CODE_OPTIONS}
+              />
+              <GlassInput
+                label="联系电话"
+                required
+                numeric
+                value={extraMemberForm.phone}
+                onChange={(e) => setExtraMemberForm({ ...extraMemberForm, phone: e.target.value })}
+              />
             </div>
           </div>
           <GlassUpload
-            label="现场补拍自拍照（如已到头像阶段可直接上传生成电子证）"
+            label="正面自拍"
             value={extraMemberForm.avatarUrl}
             onChange={(url) => setExtraMemberForm({ ...extraMemberForm, avatarUrl: url })}
           />
@@ -875,16 +944,15 @@ export function CertificatesPage() {
               取消
             </GlassButton>
             <GlassButton type="submit" variant="primary">
-              提交加证资料并生成编号
+              提交加证资料
             </GlassButton>
           </div>
         </form>
       </GlassDialog>
 
-      {/* Category Edit Dialog */}
       <GlassDialog
         open={Boolean(catDialog)}
-        title={catDialog?.id ? '编辑证件类别' : '新增自定义证件类别'}
+        title={catDialog?.id ? '编辑证件类别' : '新增证件类别'}
         onClose={() => setCatDialog(null)}
         maxWidthClass="max-w-md"
       >
@@ -892,7 +960,7 @@ export function CertificatesPage() {
           <form
             onSubmit={async (e) => {
               e.preventDefault();
-              if (!user) return;
+              if (!user || !currentAct) return;
               try {
                 await getApiClient().certificates.saveCategory(currentAct.id, catDialog, user);
                 pushToast({ tone: 'success', title: `证件类别「${catDialog.name}」已保存` });
@@ -931,24 +999,23 @@ export function CertificatesPage() {
                 onChange={(e) => setCatDialog({ ...catDialog, enabled: e.target.checked })}
                 className="w-4 h-4 accent-[#0071e3]"
               />
-              启用该证件类别
+              启用该类别
             </label>
             <div className="flex justify-end gap-2">
               <GlassButton variant="secondary" onClick={() => setCatDialog(null)}>
                 取消
               </GlassButton>
               <GlassButton type="submit" variant="primary">
-                保存类别
+                保存
               </GlassButton>
             </div>
           </form>
         )}
       </GlassDialog>
 
-      {/* Member Credential Preview */}
       <GlassDialog
         open={Boolean(previewMember)}
-        title="电子工作证件预览"
+        title="电子证件"
         onClose={() => setPreviewMember(null)}
         maxWidthClass="max-w-md"
       >
@@ -956,8 +1023,8 @@ export function CertificatesPage() {
           <ElectronicCredentialCard
             credentialKind="certificate"
             credentialId={previewMember.id}
-            activityId={currentAct.id}
-            activityName={currentAct.name}
+            activityId={previewMember.activityId}
+            activityName={previewActivityName}
             holderName={previewMember.name}
             code={previewMember.memberCode}
             subtitle={`${categories.find((c) => c.id === previewMember.certificateCategoryId)?.name ?? '展商证'} · ${previewMember.boothNumber} 展位`}

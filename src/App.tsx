@@ -15,8 +15,13 @@ import { RedemptionPage } from './features/redemption/RedemptionPage';
 import {
   AuditLogsPage,
   DepartmentsManagePage,
+  GeneralSettingsPage,
+  PasswordSettingsPage,
+  ProfileSettingsPage,
+  RedemptionSettingsPage,
   RolesManagePage,
-  SystemSettingsPage,
+  SecuritySettingsPage,
+  SettingsHomePage,
   UsersManagePage,
 } from './features/admin/AdminManagePages';
 import { ExhibitorExternalPortal } from './features/external/ExhibitorExternalPortal';
@@ -61,6 +66,18 @@ function AppShell() {
         return <GiftsPage />;
       case 'redemption':
         return <RedemptionPage />;
+      case 'admin_settings':
+        return <SettingsHomePage />;
+      case 'admin_profile':
+        return <ProfileSettingsPage />;
+      case 'admin_password':
+        return <PasswordSettingsPage />;
+      case 'admin_general':
+        return <GeneralSettingsPage />;
+      case 'admin_redemption_settings':
+        return <RedemptionSettingsPage />;
+      case 'admin_security':
+        return <SecuritySettingsPage />;
       case 'admin_users':
         return <UsersManagePage />;
       case 'admin_roles':
@@ -69,8 +86,6 @@ function AppShell() {
         return <DepartmentsManagePage />;
       case 'admin_audit':
         return <AuditLogsPage />;
-      case 'admin_settings':
-        return <SystemSettingsPage />;
       default:
         return <DashboardPage />;
     }

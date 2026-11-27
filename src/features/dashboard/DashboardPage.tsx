@@ -1,28 +1,50 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  ArrowUpRight,
-  ExternalLink,
+  AlertTriangle,
+  Calendar,
+  Camera,
+  ChevronRight,
   IdCard,
-  Plus,
+  Layers,
   QrCode,
-  Store,
   Ticket,
+  UserCheck,
   UserPlus,
 } from 'lucide-react';
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { useApp } from '../../app/providers/AppContext';
 import { PageContainer } from '../../components/layout/PageContainer';
 import {
-  GlassButton,
   GlassCard,
   LoadingState,
+  StatusIndicator,
 } from '../../components/glass/GlassPrimitives';
 import { getApiClient } from '../../services/api';
+import { formatDateDisplay, formatDateTimeDisplay } from '../../utils/stateMachines';
 import {
-  evaluateBusinessWindow,
-  formatDateDisplay,
-  formatDateTimeDisplay,
-} from '../../utils/stateMachines';
+  buildBoothComparisonSeries,
+  buildCertificateStatusSeries,
+  buildDailyTrendSeries,
+  buildGiftStatusSeries,
+  buildProgressFunnelSeries,
+  calcSafePercent,
+  computeDashboardSummary,
+} from '../../utils/dashboardMetrics';
 import type {
+  ActivityStatus,
   AuditLogEntry,
   Exhibitor,
   ExhibitorMember,
@@ -31,128 +53,56 @@ import type {
   RedemptionRecord,
 } from '../../types/domain';
 
-function RadialRing({
-  percent,
-  color,
-  size = 52,
+const ACTIVITY_STATUS_META: Record<
+  ActivityStatus,
+  { label: string; tone: 'success' | 'info' | 'warning' | 'neutral' }
+> = {
+  active: { label: '进行中', tone: 'success' },
+  draft: { label: '即将开始', tone: 'info' },
+  paused: { label: '已暂停', tone: 'warning' },
+  archived: { label: '已归档', tone: 'neutral' },
+};
+
+const AXIS_TICK_STYLE = {
+  fontSize: 11,
+  fill: '#64748b',
+  fontFamily: 'var(--font-ui)',
+};
+
+function GlassChartTooltip({
+  active,
+  payload,
+  label,
+  titleFormatter,
+  valueSuffix = '',
 }: {
-  percent: number;
-  color: string;
-  size?: number;
+  active?: boolean;
+  payload?: Array<{ name?: string; value?: number; color?: string; payload?: Record<string, unknown> }>;
+  label?: string;
+  titleFormatter?: (label: string | undefined, item?: Record<string, unknown>) => string;
+  valueSuffix?: string;
 }) {
-  const stroke = 5;
-  const radius = (size - stroke) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const clamped = Math.max(0, Math.min(100, Math.round(percent)));
-  const offset = circumference - (clamped / 100) * circumference;
+  if (!active || !payload || payload.length === 0) return null;
+  const heading = titleFormatter
+    ? titleFormatter(label, payload[0]?.payload)
+    : (label ?? payload[0]?.name ?? '');
 
   return (
-    <div className="relative inline-flex items-center justify-center shrink-0" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90" aria-hidden="true">
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke="rgba(15, 23, 42, 0.08)"
-          strokeWidth={stroke}
-        />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke={color}
-          strokeWidth={stroke}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          className="transition-all duration-500"
-        />
-      </svg>
-      <span className="absolute text-[11px] font-semibold text-slate-700 stat-number">
-        {clamped}%
-      </span>
-    </div>
-  );
-}
-
-function MultiDonutChart({
-  segments,
-  total,
-}: {
-  segments: Array<{ label: string; value: number; color: string }>;
-  total: number;
-}) {
-  const size = 164;
-  const stroke = 18;
-  const radius = (size - stroke) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const sum = Math.max(
-    1,
-    segments.reduce((acc, s) => acc + s.value, 0),
-  );
-
-  let cumulative = 0;
-
-  return (
-    <div className="flex flex-col sm:flex-row items-center gap-6">
-      <div className="relative shrink-0 flex items-center justify-center" style={{ width: size, height: size }}>
-        <svg width={size} height={size} className="-rotate-90" aria-hidden="true">
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            fill="none"
-            stroke="rgba(15, 23, 42, 0.06)"
-            strokeWidth={stroke}
-          />
-          {segments
-            .filter((s) => s.value > 0)
-            .map((seg) => {
-              const frac = seg.value / sum;
-              const dashLen = Math.max(4, frac * circumference - 3);
-              const dashOffset = -cumulative * circumference;
-              cumulative += frac;
-              return (
-                <circle
-                  key={seg.label}
-                  cx={size / 2}
-                  cy={size / 2}
-                  r={radius}
-                  fill="none"
-                  stroke={seg.color}
-                  strokeWidth={stroke}
-                  strokeLinecap="round"
-                  strokeDasharray={`${dashLen} ${circumference}`}
-                  strokeDashoffset={dashOffset}
-                />
-              );
-            })}
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-          <span className="text-2xl font-semibold text-slate-900 stat-number leading-none">
-            {total}
-          </span>
-          <span className="text-[11px] text-slate-500 mt-1">票证总量</span>
-        </div>
-      </div>
-
-      <div className="flex-1 w-full grid grid-cols-2 gap-2.5">
-        {segments.map((seg) => (
-          <div
-            key={seg.label}
-            className="px-3 py-2 rounded-xl bg-white/60 border border-slate-900/[0.05] flex items-center justify-between gap-2"
-          >
-            <span className="flex items-center gap-2 text-xs text-slate-700 min-w-0 truncate">
+    <div className="rounded-2xl bg-white/95 backdrop-blur-xl border border-slate-900/[0.08] shadow-lg px-3.5 py-2.5 text-xs space-y-1.5 min-w-[128px]">
+      {heading && <div className="font-semibold text-slate-900 numeric-text">{heading}</div>}
+      <div className="space-y-1">
+        {payload.map((entry, idx) => (
+          <div key={`${entry.name}-${idx}`} className="flex items-center justify-between gap-4">
+            <span className="inline-flex items-center gap-1.5 text-slate-600">
               <span
-                className="w-2.5 h-2.5 rounded-full shrink-0"
-                style={{ backgroundColor: seg.color }}
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ backgroundColor: entry.color || '#0071e3' }}
               />
-              <span className="truncate">{seg.label}</span>
+              {entry.name}
             </span>
-            <span className="text-sm font-semibold text-slate-900 stat-number shrink-0">
-              {seg.value}
+            <span className="font-semibold text-slate-900 stat-number">
+              {entry.value ?? 0}
+              {valueSuffix}
             </span>
           </div>
         ))}
@@ -163,16 +113,19 @@ function MultiDonutChart({
 
 export function DashboardPage() {
   const {
+    activeActivityId,
     activeActivity,
     activities,
     realtimeVersion,
     navigateAdmin,
-    switchPortal,
-    selectActivity,
   } = useApp();
 
-  const currentAct = activeActivity ?? activities[0] ?? null;
+  const isAllScope = activeActivityId === 'ALL';
+  const currentAct = isAllScope ? null : (activeActivity ?? activities[0] ?? null);
+  const scopeActivityId = isAllScope ? 'ALL' : (currentAct?.id ?? '');
+
   const [loading, setLoading] = useState(true);
+  const [distributionTab, setDistributionTab] = useState<'cert' | 'gift'>('cert');
   const [exhibitors, setExhibitors] = useState<Exhibitor[]>([]);
   const [members, setMembers] = useState<ExhibitorMember[]>([]);
   const [giftBatches, setGiftBatches] = useState<GiftBatch[]>([]);
@@ -181,17 +134,17 @@ export function DashboardPage() {
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
 
   useEffect(() => {
-    if (!currentAct) return;
+    if (!scopeActivityId) return;
     let mounted = true;
     setLoading(true);
     const api = getApiClient();
     Promise.all([
-      api.exhibitors.list(currentAct.id),
-      api.members.list(currentAct.id),
-      api.gifts.listBatches(currentAct.id),
-      api.tickets.listTickets(currentAct.id),
-      api.redemption.listRecords(currentAct.id),
-      api.auditLogs.list({ activityId: currentAct.id }),
+      api.exhibitors.list(scopeActivityId),
+      api.members.list(scopeActivityId),
+      api.gifts.listBatches(scopeActivityId),
+      api.tickets.listTickets(scopeActivityId),
+      api.redemption.listRecords(scopeActivityId),
+      api.auditLogs.list({ activityId: isAllScope ? 'all' : scopeActivityId }),
     ])
       .then(([ex, mem, gb, gt, red, audit]) => {
         if (!mounted) return;
@@ -200,7 +153,7 @@ export function DashboardPage() {
         setGiftBatches(gb);
         setGiftTickets(gt);
         setRedemptions(red);
-        setLogs(audit.slice(0, 4));
+        setLogs(audit.slice(0, 5));
       })
       .finally(() => {
         if (mounted) setLoading(false);
@@ -208,28 +161,46 @@ export function DashboardPage() {
     return () => {
       mounted = false;
     };
-  }, [currentAct?.id, realtimeVersion]);
+  }, [scopeActivityId, isAllScope, realtimeVersion]);
 
-  const boothBars = useMemo(() => {
-    return exhibitors.slice(0, 6).map((ex) => {
-      const exMembers = members.filter((m) => m.exhibitorId === ex.id && m.status !== 'voided');
-      const registered = exMembers.length;
-      const avatarDone = exMembers.filter((m) => Boolean(m.avatarUrl)).length;
-      const maxVal = Math.max(ex.quota, registered, 1);
-      return {
-        id: ex.id,
-        booth: ex.boothNumber,
-        name: ex.boothName,
-        quota: ex.quota,
-        registered,
-        avatarDone,
-        regPct: Math.min(100, Math.round((registered / maxVal) * 100)),
-        avatarPct: Math.min(100, Math.round((avatarDone / maxVal) * 100)),
-      };
-    });
-  }, [exhibitors, members]);
+  const nowMs = getApiClient().realtime.getNowMs();
+  const todayStr = new Date(nowMs).toISOString().slice(0, 10);
 
-  if (!currentAct) {
+  const summary = useMemo(
+    () =>
+      computeDashboardSummary(
+        exhibitors,
+        members,
+        giftBatches,
+        giftTickets,
+        redemptions,
+        todayStr,
+      ),
+    [exhibitors, members, giftBatches, giftTickets, redemptions, todayStr],
+  );
+
+  const trendSeries = useMemo(
+    () => buildDailyTrendSeries(members, giftTickets, redemptions, todayStr),
+    [members, giftTickets, redemptions, todayStr],
+  );
+
+  const certStatusSeries = useMemo(() => buildCertificateStatusSeries(members), [members]);
+  const giftStatusSeries = useMemo(() => buildGiftStatusSeries(giftTickets), [giftTickets]);
+  const activeDistribution = distributionTab === 'cert' ? certStatusSeries : giftStatusSeries;
+  const distributionTotal = activeDistribution.reduce((s, d) => s + d.value, 0);
+  const nonZeroDistribution = activeDistribution.filter((d) => d.value > 0);
+
+  const boothBarSeries = useMemo(
+    () => buildBoothComparisonSeries(exhibitors, members, isAllScope, activities),
+    [exhibitors, members, isAllScope, activities],
+  );
+
+  const funnelSeries = useMemo(
+    () => buildProgressFunnelSeries(summary, giftTickets.length),
+    [summary, giftTickets.length],
+  );
+
+  if (!isAllScope && !currentAct) {
     return (
       <PageContainer>
         <LoadingState rows={4} />
@@ -237,425 +208,572 @@ export function DashboardPage() {
     );
   }
 
-  const nowMs = getApiClient().realtime.getNowMs();
-  const totalQuota = exhibitors.reduce((sum, e) => sum + e.quota, 0);
-  const avatarCompleted = members.filter((m) => Boolean(m.avatarUrl)).length;
-  const avatarPending = Math.max(0, members.length - avatarCompleted);
-  const claimedBadges = members.filter((m) => m.status === 'badge_claimed').length;
-  const redeemedGifts = giftTickets.filter((t) => t.status === 'redeemed').length;
-  const validGifts = giftTickets.filter(
-    (t) => t.status === 'valid' || t.status === 'generated',
-  ).length;
-  const totalGiftQuota = giftBatches.reduce((sum, b) => sum + b.totalQuota, 0);
-  const successfulScans = redemptions.filter((r) => r.outcome === 'success').length;
+  const activeActivitiesCount = activities.filter((a) => a.status === 'active').length;
+  const claimPct = calcSafePercent(summary.claimedBadges, summary.validMembersCount);
+  const redeemPct = calcSafePercent(summary.redeemedGifts, summary.nonVoidedGifts);
 
-  const quotaPct = totalQuota > 0 ? (members.length / totalQuota) * 100 : 0;
-  const avatarPct = members.length > 0 ? (avatarCompleted / members.length) * 100 : 0;
-  const giftPct = totalGiftQuota > 0 ? (giftTickets.length / totalGiftQuota) * 100 : 0;
-  const scanRate = redemptions.length > 0 ? (successfulScans / redemptions.length) * 100 : 100;
-
-  const windowDots = [
+  const pendingTasks = [
     {
-      label: '登记',
-      phase: evaluateBusinessWindow(
-        currentAct.timeWindows.exhibitorRegisterStart,
-        currentAct.timeWindows.exhibitorRegisterEnd,
-        nowMs,
-      ),
+      label: '待补充头像',
+      count: summary.avatarPending,
+      icon: <Camera className="w-4 h-4 text-amber-600" />,
+      onClick: () => navigateAdmin('exhibitors'),
     },
     {
-      label: '头像',
-      phase: evaluateBusinessWindow(
-        currentAct.timeWindows.avatarUploadStart,
-        currentAct.timeWindows.avatarUploadEnd,
-        nowMs,
-      ),
+      label: '待领取证件',
+      count: summary.pendingClaimBadges,
+      icon: <IdCard className="w-4 h-4 text-[#0071e3]" />,
+      onClick: () => navigateAdmin('certificates'),
     },
     {
-      label: '领证',
-      phase: evaluateBusinessWindow(
-        currentAct.timeWindows.badgeClaimStart,
-        currentAct.timeWindows.badgeClaimEnd,
-        nowMs,
-      ),
+      label: '待填写赠票',
+      count: summary.waitingFillGifts,
+      icon: <Ticket className="w-4 h-4 text-[#7c3aed]" />,
+      onClick: () => navigateAdmin('gifts'),
     },
     {
-      label: '赠票',
-      phase: evaluateBusinessWindow(
-        currentAct.timeWindows.giftSelfClaimStart,
-        currentAct.timeWindows.giftSelfClaimEnd,
-        nowMs,
-      ),
+      label: '现场加证',
+      count: summary.extraValidMembers,
+      icon: <UserPlus className="w-4 h-4 text-[#0f766e]" />,
+      onClick: () => navigateAdmin('certificates'),
     },
     {
-      label: '核销',
-      phase: evaluateBusinessWindow(
-        currentAct.timeWindows.redemptionValidStart,
-        currentAct.timeWindows.redemptionValidEnd,
-        nowMs,
-      ),
+      label: '异常凭证',
+      count: summary.abnormalTotal,
+      icon: <AlertTriangle className="w-4 h-4 text-red-600" />,
+      onClick: () =>
+        navigateAdmin(summary.abnormalGifts >= summary.abnormalMembers ? 'gifts' : 'certificates'),
     },
-  ];
-
-  const donutSegments = [
-    { label: '已领证', value: claimedBadges, color: '#0071e3' },
-    { label: '待领证', value: Math.max(0, avatarCompleted - claimedBadges), color: '#38bdf8' },
-    { label: '待补拍', value: avatarPending, color: '#f59e0b' },
-    { label: '有效赠票', value: validGifts, color: '#8b5cf6' },
-    { label: '已核销', value: redeemedGifts, color: '#10b981' },
   ];
 
   return (
-    <PageContainer className="space-y-5">
-      {/* Compact Visual Activity Banner + Quick Portal Bar */}
-      <GlassCard padding="none" className="overflow-hidden">
-        <div className="grid grid-cols-1 lg:grid-cols-12 items-stretch">
-          <div className="lg:col-span-7 relative min-h-[172px] overflow-hidden bg-slate-200">
-            <img
-              src={currentAct.coverUrl}
-              alt={currentAct.name}
-              referrerPolicy="no-referrer"
-              className="absolute inset-0 w-full h-full object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-r from-slate-950/75 via-slate-900/40 to-transparent" />
-            <div className="relative z-10 h-full p-5 flex flex-col justify-between gap-8 text-white">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md numeric-text">
-                  {currentAct.code}
-                </span>
-                <div className="flex items-center gap-1.5">
-                  {activities
-                    .filter((a) => a.id !== currentAct.id)
-                    .slice(0, 2)
-                    .map((a) => (
-                      <button
-                        key={a.id}
-                        type="button"
-                        onClick={() => selectActivity(a.id)}
-                        className="text-[11px] px-2.5 py-1 rounded-full bg-slate-950/45 hover:bg-slate-950/70 backdrop-blur-md text-white/90 transition-colors cursor-pointer truncate max-w-[140px]"
-                      >
-                        {a.name}
-                      </button>
-                    ))}
-                </div>
-              </div>
-              <div>
-                <h2 className="text-xl font-semibold tracking-tight">{currentAct.name}</h2>
-                <p className="text-xs text-white/85 mt-1 date-number">
-                  {formatDateDisplay(currentAct.startAt)} ~ {formatDateDisplay(currentAct.endAt)} ·{' '}
-                  {currentAct.location}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="lg:col-span-5 p-4 sm:p-5 flex flex-col justify-between gap-4">
-            {/* Compact 5-Stage Visual Timeline Bar */}
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-700">通道状态</span>
-                <button
-                  type="button"
-                  onClick={() => navigateAdmin('activities')}
-                  className="text-xs text-[#0071e3] hover:text-[#005bb8] font-medium cursor-pointer"
-                >
-                  排期 →
-                </button>
-              </div>
-              <div className="grid grid-cols-5 gap-1.5">
-                {windowDots.map((w) => {
-                  const barColor =
-                    w.phase === 'active'
-                      ? 'bg-[#10b981]'
-                      : w.phase === 'not_started'
-                        ? 'bg-[#0071e3]'
-                        : 'bg-slate-300';
-                  return (
-                    <div
-                      key={w.label}
-                      className="p-2 rounded-xl bg-white/65 border border-slate-900/[0.05] text-center space-y-1.5"
-                    >
-                      <div className={`h-1.5 w-full rounded-full ${barColor}`} />
-                      <div className="text-xs font-medium text-slate-800">{w.label}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Compact Portal & Scanner Triggers */}
-            <div className="flex items-center gap-2">
-              <GlassButton
-                size="sm"
-                variant="secondary"
-                className="flex-1"
-                onClick={() => switchPortal('exhibitor')}
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                展商端
-              </GlassButton>
-              <GlassButton
-                size="sm"
-                variant="secondary"
-                className="flex-1"
-                onClick={() => switchPortal('gift')}
-              >
-                <Ticket className="w-3.5 h-3.5" />
-                赠票端
-              </GlassButton>
-              <GlassButton
-                size="sm"
-                variant="primary"
-                className="flex-1"
-                onClick={() => navigateAdmin('redemption')}
-              >
-                <QrCode className="w-3.5 h-3.5" />
-                核销
-              </GlassButton>
-            </div>
-          </div>
-        </div>
-      </GlassCard>
-
-      {/* 4 Visual KPI Ring Cards */}
+    <PageContainer className="space-y-4">
       {loading ? (
-        <LoadingState rows={2} />
+        <LoadingState rows={4} />
       ) : (
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-          <button
-            type="button"
-            onClick={() => navigateAdmin('exhibitors')}
-            className="glass-surface glass-interactive p-4 text-left w-full cursor-pointer flex items-center justify-between gap-3 min-w-0"
-          >
-            <div className="min-w-0">
-              <span className="text-xs text-slate-500 flex items-center gap-1.5">
-                <Store className="w-3.5 h-3.5 text-[#0071e3]" />
-                展商 / 名额
-              </span>
-              <div className="text-2xl font-semibold text-slate-900 stat-number mt-1.5">
-                {members.length}
-                <span className="text-sm font-normal text-slate-400">/{totalQuota}</span>
+        <>
+          {/* 1. Unified 4-Card Core Liquid Glass Metrics Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Card 1: Activity Overview */}
+            <button
+              type="button"
+              onClick={() => navigateAdmin('activities')}
+              className="glass-surface glass-interactive p-4 text-left flex flex-col justify-between gap-3 cursor-pointer min-w-0"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-slate-500">活动概览</span>
+                {isAllScope ? (
+                  <StatusIndicator tone="info" label={`进行中 ${activeActivitiesCount}`} />
+                ) : currentAct ? (
+                  <StatusIndicator
+                    tone={ACTIVITY_STATUS_META[currentAct.status].tone}
+                    label={ACTIVITY_STATUS_META[currentAct.status].label}
+                  />
+                ) : null}
               </div>
-              <div className="text-[11px] text-slate-500 stat-number mt-0.5">
-                {exhibitors.length} 家展商
-              </div>
-            </div>
-            <RadialRing percent={quotaPct} color="#0071e3" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigateAdmin('certificates')}
-            className="glass-surface glass-interactive p-4 text-left w-full cursor-pointer flex items-center justify-between gap-3 min-w-0"
-          >
-            <div className="min-w-0">
-              <span className="text-xs text-slate-500 flex items-center gap-1.5">
-                <IdCard className="w-3.5 h-3.5 text-[#0f766e]" />
-                头像 / 领证
-              </span>
-              <div className="text-2xl font-semibold text-slate-900 stat-number mt-1.5">
-                {avatarCompleted}
-                <span className="text-sm font-normal text-slate-400">/{members.length}</span>
-              </div>
-              <div className="text-[11px] text-slate-500 stat-number mt-0.5">
-                已领 {claimedBadges} 张
-              </div>
-            </div>
-            <RadialRing percent={avatarPct} color="#0f766e" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigateAdmin('gifts')}
-            className="glass-surface glass-interactive p-4 text-left w-full cursor-pointer flex items-center justify-between gap-3 min-w-0"
-          >
-            <div className="min-w-0">
-              <span className="text-xs text-slate-500 flex items-center gap-1.5">
-                <Ticket className="w-3.5 h-3.5 text-[#7c3aed]" />
-                赠票发放
-              </span>
-              <div className="text-2xl font-semibold text-slate-900 stat-number mt-1.5">
-                {giftTickets.length}
-                <span className="text-sm font-normal text-slate-400">/{totalGiftQuota}</span>
-              </div>
-              <div className="text-[11px] text-slate-500 stat-number mt-0.5">
-                已核销 {redeemedGifts}
-              </div>
-            </div>
-            <RadialRing percent={giftPct} color="#7c3aed" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigateAdmin('redemption')}
-            className="glass-surface glass-interactive p-4 text-left w-full cursor-pointer flex items-center justify-between gap-3 min-w-0"
-          >
-            <div className="min-w-0">
-              <span className="text-xs text-slate-500 flex items-center gap-1.5">
-                <QrCode className="w-3.5 h-3.5 text-[#10b981]" />
-                现场核销
-              </span>
-              <div className="text-2xl font-semibold text-slate-900 stat-number mt-1.5">
-                {successfulScans}
-                <span className="text-sm font-normal text-slate-400">/{redemptions.length}</span>
-              </div>
-              <div className="text-[11px] text-slate-500 stat-number mt-0.5">放行率</div>
-            </div>
-            <RadialRing percent={scanRate} color="#10b981" />
-          </button>
-        </div>
-      )}
-
-      {/* Visual Charts Row: Booth Bar Chart + Credential Distribution Donut */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        <GlassCard className="lg:col-span-6 min-w-0 space-y-4">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-slate-900">展位登记与头像进度</h3>
-            <div className="flex items-center gap-3 text-[11px] text-slate-500">
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-[#93c5fd]" />
-                已登记
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-[#0071e3]" />
-                已补拍
-              </span>
-            </div>
-          </div>
-
-          <div className="space-y-3.5 pt-1">
-            {boothBars.length === 0 ? (
-              <p className="text-xs text-slate-400 py-10 text-center">暂无展位数据</p>
-            ) : (
-              boothBars.map((bar) => (
-                <div key={bar.id} className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-slate-800 truncate">
-                      <span className="text-[#0071e3] font-semibold numeric-text mr-1.5">
-                        {bar.booth}
-                      </span>
-                      {bar.name}
-                    </span>
-                    <span className="text-slate-500 stat-number shrink-0 ml-2">
-                      {bar.avatarDone}/{bar.registered}/{bar.quota}
-                    </span>
-                  </div>
-                  <div className="h-3 rounded-full bg-slate-900/[0.06] overflow-hidden relative">
-                    <div
-                      className="h-full rounded-full bg-[#93c5fd] absolute left-0 top-0 transition-all duration-500"
-                      style={{ width: `${bar.regPct}%` }}
-                    />
-                    <div
-                      className="h-full rounded-full bg-[#0071e3] absolute left-0 top-0 transition-all duration-500"
-                      style={{ width: `${bar.avatarPct}%` }}
-                    />
-                  </div>
+              <div className="min-w-0 space-y-1">
+                <div className="text-base font-semibold text-slate-900 truncate">
+                  {isAllScope ? `全部活动 · ${activities.length} 场` : currentAct?.name}
                 </div>
-              ))
-            )}
-          </div>
-        </GlassCard>
+                <div className="text-[11px] text-slate-500 flex items-center gap-1.5 truncate date-number">
+                  {isAllScope ? (
+                    <>
+                      <Layers className="w-3.5 h-3.5 text-[#0071e3] shrink-0" />
+                      <span>
+                        {exhibitors.length} 家展商 · {summary.totalQuota} 名额
+                      </span>
+                    </>
+                  ) : currentAct ? (
+                    <>
+                      <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span>
+                        {formatDateDisplay(currentAct.startAt).slice(5)} ~{' '}
+                        {formatDateDisplay(currentAct.endAt).slice(5)}
+                      </span>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+              <div className="text-[11px] text-slate-500 flex items-center justify-between gap-2 stat-number pt-1 border-t border-slate-900/[0.05]">
+                <span className="truncate">
+                  {isAllScope ? `赠票配额 ${summary.totalGiftQuota}` : `${exhibitors.length} 展商 · ${summary.totalQuota} 名额`}
+                </span>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              </div>
+            </button>
 
-        <GlassCard className="lg:col-span-6 min-w-0 space-y-4">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-slate-900">票证状态分布</h3>
+            {/* Card 2: Registration Progress */}
+            <button
+              type="button"
+              onClick={() => navigateAdmin('exhibitors')}
+              className="glass-surface glass-interactive p-4 text-left flex flex-col justify-between gap-3 cursor-pointer min-w-0"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-slate-500">登记进度</span>
+                <UserCheck className="w-4 h-4 text-[#0071e3] shrink-0" />
+              </div>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-2xl font-semibold text-slate-900 stat-number leading-none">
+                  {summary.registrationPct}%
+                </span>
+                <span className="text-xs text-slate-500 stat-number">
+                  {summary.validMembersCount} / {summary.totalQuota}
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                <div className="h-1.5 rounded-full bg-slate-900/[0.07] overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-[#0071e3] transition-all duration-500"
+                    style={{ width: `${summary.registrationPct}%` }}
+                  />
+                </div>
+                <div className="text-[11px] text-slate-500 stat-number truncate">
+                  常规 {summary.normalValidMembers} · 加证 {summary.extraValidMembers}
+                </div>
+              </div>
+            </button>
+
+            {/* Card 3: Claimed Certificates */}
             <button
               type="button"
               onClick={() => navigateAdmin('certificates')}
-              className="text-xs text-[#0071e3] hover:text-[#005bb8] font-medium cursor-pointer"
+              className="glass-surface glass-interactive p-4 text-left flex flex-col justify-between gap-3 cursor-pointer min-w-0"
             >
-              详情 →
-            </button>
-          </div>
-          <MultiDonutChart
-            segments={donutSegments}
-            total={members.length + giftTickets.length}
-          />
-        </GlassCard>
-      </div>
-
-      {/* Bottom Compact Row: Icon Tiles + Minimal Activity Feed */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        <div className="lg:col-span-5 grid grid-cols-2 gap-3 min-w-0">
-          {[
-            {
-              title: '展商建档',
-              icon: <Plus className="w-4 h-4 text-[#0071e3]" />,
-              onClick: () => navigateAdmin('exhibitors'),
-            },
-            {
-              title: '发证加证',
-              icon: <UserPlus className="w-4 h-4 text-[#0f766e]" />,
-              onClick: () => navigateAdmin('certificates'),
-            },
-            {
-              title: '赠票发放',
-              icon: <Ticket className="w-4 h-4 text-[#7c3aed]" />,
-              onClick: () => navigateAdmin('gifts'),
-            },
-            {
-              title: '扫码核销',
-              icon: <QrCode className="w-4 h-4 text-[#0071e3]" />,
-              onClick: () => navigateAdmin('redemption'),
-            },
-          ].map((tile) => (
-            <button
-              key={tile.title}
-              type="button"
-              onClick={tile.onClick}
-              className="glass-surface glass-interactive p-4 flex flex-col justify-between gap-3 text-left cursor-pointer min-w-0"
-            >
-              <div className="flex items-center justify-between">
-                <div className="w-9 h-9 rounded-xl bg-white/80 border border-slate-900/[0.05] flex items-center justify-center">
-                  {tile.icon}
-                </div>
-                <ArrowUpRight className="w-4 h-4 text-slate-400" />
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-slate-500">已领取证件</span>
+                <IdCard className="w-4 h-4 text-[#0f766e] shrink-0" />
               </div>
-              <span className="text-sm font-semibold text-slate-900">{tile.title}</span>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-2xl font-semibold text-slate-900 stat-number leading-none">
+                  {summary.claimedBadges}
+                </span>
+                <span className="text-xs text-slate-500 stat-number">{claimPct}%</span>
+              </div>
+              <div className="space-y-1.5">
+                <div className="h-1.5 rounded-full bg-slate-900/[0.07] overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-[#0f766e] transition-all duration-500"
+                    style={{ width: `${claimPct}%` }}
+                  />
+                </div>
+                <div className="text-[11px] text-slate-500 stat-number truncate">
+                  待领取 {summary.pendingClaimBadges} · 头像 {summary.avatarCompleted}/{summary.validMembersCount}
+                </div>
+              </div>
             </button>
-          ))}
-        </div>
 
-        <GlassCard className="lg:col-span-7 min-w-0 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-900">最近动态</h3>
+            {/* Card 4: Today's Redemptions */}
             <button
               type="button"
-              onClick={() => navigateAdmin('admin_audit')}
-              className="text-xs font-medium text-[#0071e3] hover:text-[#005bb8] cursor-pointer"
+              onClick={() => navigateAdmin('redemption')}
+              className="glass-surface glass-interactive p-4 text-left flex flex-col justify-between gap-3 cursor-pointer min-w-0"
             >
-              日志 →
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-slate-500">今日核销</span>
+                <QrCode className="w-4 h-4 text-[#10b981] shrink-0" />
+              </div>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-2xl font-semibold text-slate-900 stat-number leading-none">
+                  {summary.todayRedemptions}
+                </span>
+                <span className="text-xs text-slate-500 stat-number">核销率 {redeemPct}%</span>
+              </div>
+              <div className="space-y-1.5">
+                <div className="h-1.5 rounded-full bg-slate-900/[0.07] overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-[#10b981] transition-all duration-500"
+                    style={{ width: `${redeemPct}%` }}
+                  />
+                </div>
+                <div className="text-[11px] text-slate-500 stat-number truncate">
+                  累计 {summary.totalSuccessfulRedemptions} · 有效赠票 {summary.validGifts}
+                </div>
+              </div>
             </button>
           </div>
-          {logs.length === 0 ? (
-            <p className="text-xs text-slate-400 py-6 text-center">暂无记录</p>
-          ) : (
-            <div className="divide-y divide-slate-900/[0.06]">
-              {logs.map((log) => (
-                <div
-                  key={log.id}
-                  className="py-2.5 flex items-center justify-between gap-3 text-xs"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${
-                        log.result === 'success' ? 'bg-[#10b981]' : 'bg-red-500'
-                      }`}
-                    />
-                    <span className="font-medium text-slate-900 truncate">{log.targetLabel}</span>
-                    <span className="text-slate-400 shrink-0 hidden sm:inline">
-                      {log.afterState}
-                    </span>
-                  </div>
-                  <span className="text-slate-400 date-number shrink-0">
-                    {formatDateTimeDisplay(log.timestamp).slice(5)}
+
+          {/* 2. Primary Interactive Charts Row: Trend Area + Status Donut */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            {/* Left 7 cols: Area Chart */}
+            <GlassCard className="lg:col-span-7 min-w-0 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold text-slate-900">登记与核销趋势</h2>
+                <div className="flex items-center gap-3 text-[11px] text-slate-500">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[#0071e3]" />
+                    人员登记
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[#7c3aed]" />
+                    赠票发放
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[#10b981]" />
+                    核销完成
                   </span>
                 </div>
-              ))}
-            </div>
-          )}
-        </GlassCard>
-      </div>
+              </div>
+              <div className="w-full h-[230px] numeric-text">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={trendSeries} margin={{ top: 8, right: 8, left: -22, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="dashMembersFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#0071e3" stopOpacity={0.28} />
+                        <stop offset="100%" stopColor="#0071e3" stopOpacity={0.02} />
+                      </linearGradient>
+                      <linearGradient id="dashGiftsFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#7c3aed" stopOpacity={0.24} />
+                        <stop offset="100%" stopColor="#7c3aed" stopOpacity={0.02} />
+                      </linearGradient>
+                      <linearGradient id="dashRedeemFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#10b981" stopOpacity={0.28} />
+                        <stop offset="100%" stopColor="#10b981" stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(15,23,42,0.06)" />
+                    <XAxis
+                      dataKey="label"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={AXIS_TICK_STYLE}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      axisLine={false}
+                      tickLine={false}
+                      tick={AXIS_TICK_STYLE}
+                    />
+                    <Tooltip
+                      content={
+                        <GlassChartTooltip
+                          titleFormatter={(_lbl, item) => String(item?.date ?? '')}
+                        />
+                      }
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="members"
+                      name="人员登记"
+                      stroke="#0071e3"
+                      strokeWidth={2}
+                      fill="url(#dashMembersFill)"
+                      activeDot={{ r: 4, strokeWidth: 2, stroke: '#fff' }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="gifts"
+                      name="赠票发放"
+                      stroke="#7c3aed"
+                      strokeWidth={2}
+                      fill="url(#dashGiftsFill)"
+                      activeDot={{ r: 4, strokeWidth: 2, stroke: '#fff' }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="redemptions"
+                      name="核销完成"
+                      stroke="#10b981"
+                      strokeWidth={2}
+                      fill="url(#dashRedeemFill)"
+                      activeDot={{ r: 4, strokeWidth: 2, stroke: '#fff' }}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </GlassCard>
+
+            {/* Right 5 cols: Donut Distribution Chart */}
+            <GlassCard className="lg:col-span-5 min-w-0 flex flex-col justify-between gap-3">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold text-slate-900">状态分布</h2>
+                <div className="inline-flex p-0.5 rounded-full bg-slate-900/[0.05]">
+                  <button
+                    type="button"
+                    onClick={() => setDistributionTab('cert')}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all cursor-pointer ${
+                      distributionTab === 'cert'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    证件
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDistributionTab('gift')}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all cursor-pointer ${
+                      distributionTab === 'gift'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    赠票
+                  </button>
+                </div>
+              </div>
+
+              <div className="relative w-full h-[176px] numeric-text">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={
+                        nonZeroDistribution.length > 0
+                          ? nonZeroDistribution
+                          : [{ name: '暂无数据', value: 1, color: '#e2e8f0' }]
+                      }
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={54}
+                      outerRadius={78}
+                      paddingAngle={nonZeroDistribution.length > 1 ? 3 : 0}
+                      cornerRadius={6}
+                      stroke="none"
+                    >
+                      {(nonZeroDistribution.length > 0
+                        ? nonZeroDistribution
+                        : [{ name: '暂无数据', value: 1, color: '#e2e8f0' }]
+                      ).map((entry) => (
+                        <Cell key={entry.name} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    {nonZeroDistribution.length > 0 && <Tooltip content={<GlassChartTooltip />} />}
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-2xl font-semibold text-slate-900 stat-number leading-none">
+                    {distributionTotal}
+                  </span>
+                  <span className="text-[11px] text-slate-400 mt-1">
+                    {distributionTab === 'cert' ? '证件总数' : '赠票总数'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 pt-1 border-t border-slate-900/[0.05]">
+                {activeDistribution.map((slice) => (
+                  <div
+                    key={slice.name}
+                    className="flex items-center justify-between text-xs gap-2"
+                  >
+                    <span className="inline-flex items-center gap-1.5 text-slate-600 truncate">
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{ backgroundColor: slice.color }}
+                      />
+                      {slice.name}
+                    </span>
+                    <span className="font-semibold text-slate-900 stat-number shrink-0">
+                      {slice.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </GlassCard>
+          </div>
+
+          {/* 3. Secondary Charts Row: Booth/Activity Bar Chart + 5-Stage Completion Horizontal Chart */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            {/* Left 7 cols: Grouped Bar Chart */}
+            <GlassCard className="lg:col-span-7 min-w-0 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold text-slate-900">
+                  {isAllScope ? '各活动名额与领证' : '展位名额与领证'}
+                </h2>
+                <div className="flex items-center gap-3 text-[11px] text-slate-500">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-slate-300" />
+                    分配名额
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[#0071e3]" />
+                    已登记
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[#10b981]" />
+                    已领证
+                  </span>
+                </div>
+              </div>
+              <div className="w-full h-[220px] numeric-text">
+                {boothBarSeries.length === 0 ? (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400">
+                    暂无数据
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={boothBarSeries}
+                      barGap={4}
+                      margin={{ top: 8, right: 8, left: -22, bottom: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(15,23,42,0.06)" />
+                      <XAxis
+                        dataKey="name"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={AXIS_TICK_STYLE}
+                      />
+                      <YAxis
+                        allowDecimals={false}
+                        axisLine={false}
+                        tickLine={false}
+                        tick={AXIS_TICK_STYLE}
+                      />
+                      <Tooltip
+                        cursor={{ fill: 'rgba(15,23,42,0.03)', radius: 8 }}
+                        content={
+                          <GlassChartTooltip
+                            titleFormatter={(_lbl, item) => String(item?.fullName ?? '')}
+                          />
+                        }
+                      />
+                      <Bar dataKey="quota" name="分配名额" fill="#cbd5e1" radius={[6, 6, 0, 0]} maxBarSize={22} />
+                      <Bar dataKey="registered" name="已登记" fill="#0071e3" radius={[6, 6, 0, 0]} maxBarSize={22} />
+                      <Bar dataKey="claimed" name="已领证" fill="#10b981" radius={[6, 6, 0, 0]} maxBarSize={22} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </GlassCard>
+
+            {/* Right 5 cols: Completion Rate Horizontal Bar Chart */}
+            <GlassCard className="lg:col-span-5 min-w-0 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold text-slate-900">业务完成率</h2>
+                <span className="text-[11px] text-slate-400">百分比</span>
+              </div>
+              <div className="w-full h-[220px] numeric-text">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={funnelSeries}
+                    layout="vertical"
+                    margin={{ top: 4, right: 16, left: 4, bottom: 4 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(15,23,42,0.06)" />
+                    <XAxis
+                      type="number"
+                      domain={[0, 100]}
+                      axisLine={false}
+                      tickLine={false}
+                      tick={AXIS_TICK_STYLE}
+                      tickFormatter={(v) => `${v}%`}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="label"
+                      width={58}
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 12, fill: '#334155', fontFamily: 'var(--font-ui)' }}
+                    />
+                    <Tooltip
+                      cursor={{ fill: 'rgba(15,23,42,0.03)', radius: 8 }}
+                      content={
+                        <GlassChartTooltip
+                          valueSuffix="%"
+                          titleFormatter={(_lbl, item) =>
+                            `${String(item?.label ?? '')} (${String(item?.current ?? 0)} / ${String(item?.total ?? 0)})`
+                          }
+                        />
+                      }
+                    />
+                    <Bar
+                      dataKey="pct"
+                      name="完成率"
+                      radius={[0, 8, 8, 0]}
+                      barSize={16}
+                      background={{ fill: 'rgba(15,23,42,0.05)', radius: 8 }}
+                    >
+                      {funnelSeries.map((entry) => (
+                        <Cell key={entry.label} fill={entry.color} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </GlassCard>
+          </div>
+
+          {/* 4. Bottom Action Row: Pending Tasks + Recent Operations */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            {/* Left 5 cols: Pending Tasks */}
+            <GlassCard className="lg:col-span-5 min-w-0 space-y-2.5">
+              <h2 className="text-sm font-semibold text-slate-900">待处理事项</h2>
+              <div className="divide-y divide-slate-900/[0.06]">
+                {pendingTasks.map((task) => (
+                  <button
+                    key={task.label}
+                    type="button"
+                    onClick={task.onClick}
+                    className="w-full py-2.5 flex items-center justify-between gap-3 text-left hover:bg-slate-900/[0.025] -mx-2 px-2 rounded-xl transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="w-7 h-7 rounded-xl bg-white/85 border border-slate-900/[0.06] flex items-center justify-center shrink-0">
+                        {task.icon}
+                      </span>
+                      <span className="text-xs font-medium text-slate-700 truncate">
+                        {task.label}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-sm font-semibold text-slate-900 stat-number">
+                        {task.count}
+                      </span>
+                      <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </GlassCard>
+
+            {/* Right 7 cols: Recent Operations */}
+            <GlassCard className="lg:col-span-7 min-w-0 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-slate-900">最近操作</h2>
+                <button
+                  type="button"
+                  onClick={() => navigateAdmin('admin_audit')}
+                  className="text-xs font-medium text-[#0071e3] hover:text-[#005bb8] cursor-pointer"
+                >
+                  全部日志 →
+                </button>
+              </div>
+              {logs.length === 0 ? (
+                <p className="text-xs text-slate-400 py-8 text-center">暂无记录</p>
+              ) : (
+                <div className="divide-y divide-slate-900/[0.06]">
+                  {logs.map((log) => (
+                    <div
+                      key={log.id}
+                      className="py-2.5 flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span
+                          className={`w-2 h-2 rounded-full shrink-0 ${
+                            log.result === 'success' ? 'bg-[#10b981]' : 'bg-red-500'
+                          }`}
+                        />
+                        <span className="font-medium text-slate-700 shrink-0">
+                          {log.actorName}
+                        </span>
+                        <span className="text-slate-900 truncate">{log.targetLabel}</span>
+                        <span className="text-slate-400 shrink-0 hidden sm:inline truncate max-w-[180px]">
+                          {log.afterState}
+                        </span>
+                      </div>
+                      <span className="text-slate-400 date-number shrink-0">
+                        {formatDateTimeDisplay(log.timestamp).slice(5)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </GlassCard>
+          </div>
+        </>
+      )}
     </PageContainer>
   );
 }
