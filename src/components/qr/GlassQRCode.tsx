@@ -229,9 +229,6 @@ export function ElectronicCredentialCard({
                 <p className="text-[11px] text-slate-500 text-center numeric-text break-all">
                   令牌：{tokenObj.token}
                 </p>
-                {tokenObj.isMockDemo && (
-                  <p className="text-[11px] text-amber-700 text-center">演示模式动态令牌</p>
-                )}
               </div>
             </>
           ) : (

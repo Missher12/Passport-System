@@ -10,6 +10,7 @@ import {
   EyeOff,
   Info,
   Lock,
+  MoreHorizontal,
   RefreshCw,
   Search,
   WifiOff,
@@ -734,21 +735,153 @@ export function PermissionDeniedState({ moduleLabel }: { moduleLabel: string }) 
   );
 }
 
+export interface GlassActionMenuItem {
+  label: string;
+  icon?: React.ReactNode;
+  tone?: 'default' | 'danger';
+  disabled?: boolean;
+  onClick: () => void;
+}
+
+export function GlassActionMenu({
+  items,
+  label = '更多操作',
+}: {
+  items: GlassActionMenuItem[];
+  label?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
+
+  const visibleItems = items.filter(Boolean);
+
+  const updatePosition = () => {
+    const btn = triggerRef.current;
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    const menuWidth = 156;
+    const estHeight = visibleItems.length * 36 + 12;
+    const spaceBelow = window.innerHeight - rect.bottom - 12;
+    const openUp = spaceBelow < estHeight && rect.top > estHeight;
+    const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
+    setMenuStyle({
+      position: 'fixed',
+      left,
+      top: openUp ? Math.max(8, rect.top - estHeight - 6) : rect.bottom + 6,
+      width: menuWidth,
+      zIndex: 220,
+    });
+  };
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePosition();
+  }, [open, visibleItems.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (triggerRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    const onReposition = () => setOpen(false);
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    window.addEventListener('scroll', onReposition, true);
+    window.addEventListener('resize', onReposition);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('scroll', onReposition, true);
+      window.removeEventListener('resize', onReposition);
+    };
+  }, [open]);
+
+  if (visibleItems.length === 0) return null;
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-label={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        className={`w-8 h-8 rounded-full inline-flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+          open
+            ? 'bg-slate-900/[0.08] text-slate-900'
+            : 'text-slate-500 hover:text-slate-900 hover:bg-slate-900/[0.06]'
+        }`}
+      >
+        <MoreHorizontal className="w-4 h-4" />
+      </button>
+
+      {open &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            style={menuStyle}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white/95 backdrop-blur-2xl border border-slate-900/[0.08] shadow-[0_14px_38px_rgba(15,23,42,0.14),0_2px_6px_rgba(15,23,42,0.06)] rounded-2xl p-1.5 space-y-0.5"
+          >
+            {visibleItems.map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                role="menuitem"
+                disabled={item.disabled}
+                onClick={() => {
+                  setOpen(false);
+                  item.onClick();
+                }}
+                className={`w-full px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2 text-left transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                  item.tone === 'danger'
+                    ? 'text-red-600 hover:bg-red-500/[0.08]'
+                    : 'text-slate-700 hover:bg-slate-900/[0.05] hover:text-slate-900'
+                }`}
+              >
+                {item.icon && <span className="shrink-0 opacity-80">{item.icon}</span>}
+                <span className="truncate">{item.label}</span>
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
+
 export function AllActivityReadonlyNotice({
   onSelectActivity,
 }: {
   onSelectActivity?: () => void;
 }) {
   return (
-    <div className="glass-surface-subtle px-4 py-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-700">
-      <span className="flex items-center gap-2">
-        <Info className="w-4 h-4 text-[#0071e3] shrink-0" />
-        当前为「全部活动」汇总视图，仅支持查看与筛选；新增、编辑、发证或核销请先在顶部切换至具体活动。
+    <div className="px-4 py-2.5 rounded-2xl bg-white/55 border border-slate-900/[0.06] flex items-center justify-between gap-3 text-xs text-slate-600">
+      <span className="inline-flex items-center gap-2 font-medium text-slate-700">
+        <span className="w-1.5 h-1.5 rounded-full bg-[#0071e3] shrink-0" />
+        全部活动 · 只读
       </span>
       {onSelectActivity && (
-        <GlassButton size="sm" variant="secondary" onClick={onSelectActivity}>
-          前往活动列表
-        </GlassButton>
+        <button
+          type="button"
+          onClick={onSelectActivity}
+          className="text-xs font-medium text-[#0071e3] hover:text-[#005bb8] transition-colors cursor-pointer shrink-0"
+        >
+          切换活动
+        </button>
       )}
     </div>
   );

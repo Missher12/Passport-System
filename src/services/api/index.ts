@@ -28,6 +28,10 @@ export function setApiAdapterMode(mode: AdapterMode, apiBaseUrl?: string): ApiCl
   return getApiClient();
 }
 
+export function getApiAdapterMode(): AdapterMode {
+  return activeMode;
+}
+
 export function getMockAdapterInstance(): MockApiAdapter {
   return mockInstance;
 }

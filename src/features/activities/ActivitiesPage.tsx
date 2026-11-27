@@ -4,6 +4,7 @@ import { useApp } from '../../app/providers/AppContext';
 import { PageContainer } from '../../components/layout/PageContainer';
 import {
   EmptyState,
+  GlassActionMenu,
   GlassButton,
   GlassCard,
   GlassDatePicker,
@@ -234,7 +235,7 @@ export function ActivitiesPage() {
         </div>
       </GlassToolbar>
 
-      {/* Single-Row Horizontal Activity Cards */}
+      {/* Single-Surface Compact Activity List */}
       {filtered.length === 0 ? (
         <GlassCard>
           <EmptyState
@@ -247,106 +248,112 @@ export function ActivitiesPage() {
           />
         </GlassCard>
       ) : (
-        <div className="flex flex-col gap-3.5">
-          {filtered.map((act) => {
-            const st = STATUS_META[act.status];
-            const isCurrent = act.id === activeActivityId;
-            return (
-              <GlassCard
-                key={act.id}
-                padding="sm"
-                className={`flex flex-col md:flex-row md:items-center gap-4 min-w-0 transition-shadow ${
-                  isCurrent ? 'ring-2 ring-[#0071e3]/45' : ''
-                }`}
-              >
-                {/* Left: Compact Cover Thumbnail */}
-                <div className="relative w-full h-36 md:w-44 md:h-24 rounded-2xl overflow-hidden bg-slate-200 shrink-0">
-                  <img
-                    src={act.coverUrl}
-                    alt={act.name}
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/65 via-transparent to-transparent" />
-                  <span className="absolute bottom-2 left-2.5 text-[11px] font-medium text-white/95 numeric-text">
-                    {act.code}
-                  </span>
-                </div>
+        <GlassCard padding="none" className="overflow-hidden">
+          <div className="divide-y divide-slate-900/[0.06]">
+            {filtered.map((act) => {
+              const st = STATUS_META[act.status];
+              const isCurrent = act.id === activeActivityId;
+              const menuItems = [
+                {
+                  label: '编辑配置',
+                  icon: <Edit3 className="w-3.5 h-3.5" />,
+                  onClick: () => openEdit(act),
+                },
+                ...(act.status === 'active'
+                  ? [
+                      {
+                        label: '暂停活动',
+                        icon: <PauseCircle className="w-3.5 h-3.5" />,
+                        onClick: () => handleStatusChange(act, 'paused'),
+                      },
+                    ]
+                  : []),
+                ...(act.status === 'paused'
+                  ? [
+                      {
+                        label: '恢复进行',
+                        icon: <PlayCircle className="w-3.5 h-3.5" />,
+                        onClick: () => handleStatusChange(act, 'active'),
+                      },
+                    ]
+                  : []),
+                ...(act.status !== 'archived'
+                  ? [
+                      {
+                        label: '归档活动',
+                        icon: <Archive className="w-3.5 h-3.5" />,
+                        tone: 'danger' as const,
+                        onClick: () => handleStatusChange(act, 'archived'),
+                      },
+                    ]
+                  : []),
+              ];
 
-                {/* Middle: Key Meta & Compact Schedule */}
-                <div className="flex-1 min-w-0 space-y-2">
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <h2 className="text-base font-semibold text-slate-900 truncate">{act.name}</h2>
-                    <StatusIndicator tone={st.tone} label={st.label} />
-                    <span className="text-xs text-slate-400">
-                      {act.defaultEntryMode === 'A_INDEPENDENT' ? '独立链接' : '统一链接'}
-                    </span>
+              return (
+                <div
+                  key={act.id}
+                  className={`px-4 py-3.5 flex flex-col md:flex-row md:items-center gap-3.5 transition-colors ${
+                    isCurrent ? 'bg-[#0071e3]/[0.04]' : 'hover:bg-white/55'
+                  }`}
+                >
+                  {/* Compact Thumbnail + Core Identity */}
+                  <div className="flex items-center gap-3.5 flex-1 min-w-0">
+                    <div className="w-14 h-10 rounded-xl overflow-hidden bg-slate-200 shrink-0 border border-slate-900/[0.06]">
+                      <img
+                        src={act.coverUrl}
+                        alt={act.name}
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold text-slate-900 truncate">
+                          {act.name}
+                        </span>
+                        <span className="text-xs text-slate-400 numeric-text shrink-0">
+                          {act.code}
+                        </span>
+                        <StatusIndicator tone={st.tone} label={st.label} />
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-0.5 mt-1 text-xs text-slate-500 date-number">
+                        <span className="inline-flex items-center gap-1 shrink-0">
+                          <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
+                          {formatDateDisplay(act.startAt)} ~ {formatDateDisplay(act.endAt)}
+                        </span>
+                        <span className="truncate">{act.location}</span>
+                        <span className="text-slate-400 hidden lg:inline shrink-0">
+                          {act.defaultEntryMode === 'A_INDEPENDENT' ? '独立链接' : '统一链接'}
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 date-number">
-                    <span className="inline-flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      {formatDateDisplay(act.startAt)} ~ {formatDateDisplay(act.endAt)}
-                    </span>
-                    <span className="truncate">{act.location}</span>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[11px] text-slate-500 date-number">
-                    <span>登记 {formatDateDisplay(act.timeWindows.exhibitorRegisterEnd).slice(5)}</span>
-                    <span>头像 {formatDateDisplay(act.timeWindows.avatarUploadStart).slice(5)}</span>
-                    <span>领证 {formatDateDisplay(act.timeWindows.badgeClaimStart).slice(5)}</span>
-                    <span>赠票 {formatDateDisplay(act.timeWindows.giftSelfClaimEnd).slice(5)}</span>
+                  {/* Right: Concise Status / Switch + Overflow Menu */}
+                  <div className="flex items-center justify-end gap-2 shrink-0 pl-17 md:pl-0">
+                    {isCurrent ? (
+                      <span className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full bg-[#0071e3]/10 text-[#0071e3] text-xs font-medium shrink-0">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#0071e3]" />
+                        当前活动
+                      </span>
+                    ) : (
+                      <GlassButton
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => selectActivity(act.id)}
+                      >
+                        切换
+                      </GlassButton>
+                    )}
+                    <GlassActionMenu items={menuItems} label={`更多操作：${act.name}`} />
                   </div>
                 </div>
-
-                {/* Right: Single-Row Action Strip */}
-                <div className="flex flex-wrap md:flex-nowrap items-center justify-end gap-1.5 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-900/[0.06]">
-                  <GlassButton
-                    size="sm"
-                    variant={isCurrent ? 'secondary' : 'primary'}
-                    onClick={() => selectActivity(act.id)}
-                  >
-                    {isCurrent ? '当前活动' : '切换'}
-                  </GlassButton>
-                  <GlassButton size="sm" variant="secondary" onClick={() => openEdit(act)}>
-                    <Edit3 className="w-3.5 h-3.5" />
-                    编辑
-                  </GlassButton>
-                  {act.status === 'active' && (
-                    <GlassButton
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => handleStatusChange(act, 'paused')}
-                    >
-                      <PauseCircle className="w-3.5 h-3.5" />
-                      暂停
-                    </GlassButton>
-                  )}
-                  {act.status === 'paused' && (
-                    <GlassButton
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => handleStatusChange(act, 'active')}
-                    >
-                      <PlayCircle className="w-3.5 h-3.5" />
-                      恢复
-                    </GlassButton>
-                  )}
-                  {act.status !== 'archived' && (
-                    <GlassButton
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => handleStatusChange(act, 'archived')}
-                    >
-                      <Archive className="w-3.5 h-3.5" />
-                      归档
-                    </GlassButton>
-                  )}
-                </div>
-              </GlassCard>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        </GlassCard>
       )}
 
       <GlassDialog

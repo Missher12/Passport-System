@@ -1,11 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
-  Calendar,
   Camera,
   ChevronRight,
   IdCard,
-  Layers,
   QrCode,
   Ticket,
   UserCheck,
@@ -258,7 +256,7 @@ export function DashboardPage() {
             <button
               type="button"
               onClick={() => navigateAdmin('activities')}
-              className="glass-surface glass-interactive p-4 text-left flex flex-col justify-between gap-3 cursor-pointer min-w-0"
+              className="glass-surface glass-interactive p-4 min-h-[124px] h-full text-left flex flex-col justify-between gap-2.5 cursor-pointer min-w-0"
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-medium text-slate-500">活动概览</span>
@@ -271,32 +269,23 @@ export function DashboardPage() {
                   />
                 ) : null}
               </div>
-              <div className="min-w-0 space-y-1">
+              <div className="min-w-0">
                 <div className="text-base font-semibold text-slate-900 truncate">
                   {isAllScope ? `全部活动 · ${activities.length} 场` : currentAct?.name}
                 </div>
-                <div className="text-[11px] text-slate-500 flex items-center gap-1.5 truncate date-number">
-                  {isAllScope ? (
-                    <>
-                      <Layers className="w-3.5 h-3.5 text-[#0071e3] shrink-0" />
-                      <span>
-                        {exhibitors.length} 家展商 · {summary.totalQuota} 名额
-                      </span>
-                    </>
-                  ) : currentAct ? (
-                    <>
-                      <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span>
-                        {formatDateDisplay(currentAct.startAt).slice(5)} ~{' '}
-                        {formatDateDisplay(currentAct.endAt).slice(5)}
-                      </span>
-                    </>
-                  ) : null}
+                <div className="text-xs text-slate-500 truncate date-number mt-0.5">
+                  {isAllScope
+                    ? `${exhibitors.length} 家展商 · ${summary.totalQuota} 名额`
+                    : currentAct
+                      ? `${formatDateDisplay(currentAct.startAt).slice(5)} ~ ${formatDateDisplay(currentAct.endAt).slice(5)}`
+                      : ''}
                 </div>
               </div>
-              <div className="text-[11px] text-slate-500 flex items-center justify-between gap-2 stat-number pt-1 border-t border-slate-900/[0.05]">
+              <div className="text-[11px] text-slate-500 flex items-center justify-between gap-2 stat-number">
                 <span className="truncate">
-                  {isAllScope ? `赠票配额 ${summary.totalGiftQuota}` : `${exhibitors.length} 展商 · ${summary.totalQuota} 名额`}
+                  {isAllScope
+                    ? `赠票配额 ${summary.totalGiftQuota}`
+                    : `${exhibitors.length} 展商 · ${summary.totalQuota} 名额`}
                 </span>
                 <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               </div>
@@ -306,7 +295,7 @@ export function DashboardPage() {
             <button
               type="button"
               onClick={() => navigateAdmin('exhibitors')}
-              className="glass-surface glass-interactive p-4 text-left flex flex-col justify-between gap-3 cursor-pointer min-w-0"
+              className="glass-surface glass-interactive p-4 min-h-[124px] h-full text-left flex flex-col justify-between gap-2.5 cursor-pointer min-w-0"
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-medium text-slate-500">登记进度</span>
@@ -337,7 +326,7 @@ export function DashboardPage() {
             <button
               type="button"
               onClick={() => navigateAdmin('certificates')}
-              className="glass-surface glass-interactive p-4 text-left flex flex-col justify-between gap-3 cursor-pointer min-w-0"
+              className="glass-surface glass-interactive p-4 min-h-[124px] h-full text-left flex flex-col justify-between gap-2.5 cursor-pointer min-w-0"
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-medium text-slate-500">已领取证件</span>
@@ -366,7 +355,7 @@ export function DashboardPage() {
             <button
               type="button"
               onClick={() => navigateAdmin('redemption')}
-              className="glass-surface glass-interactive p-4 text-left flex flex-col justify-between gap-3 cursor-pointer min-w-0"
+              className="glass-surface glass-interactive p-4 min-h-[124px] h-full text-left flex flex-col justify-between gap-2.5 cursor-pointer min-w-0"
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-medium text-slate-500">今日核销</span>
@@ -699,7 +688,7 @@ export function DashboardPage() {
           {/* 4. Bottom Action Row: Pending Tasks + Recent Operations */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
             {/* Left 5 cols: Pending Tasks */}
-            <GlassCard className="lg:col-span-5 min-w-0 space-y-2.5">
+            <GlassCard className="lg:col-span-5 min-w-0 space-y-2">
               <h2 className="text-sm font-semibold text-slate-900">待处理事项</h2>
               <div className="divide-y divide-slate-900/[0.06]">
                 {pendingTasks.map((task) => (
@@ -707,10 +696,10 @@ export function DashboardPage() {
                     key={task.label}
                     type="button"
                     onClick={task.onClick}
-                    className="w-full py-2.5 flex items-center justify-between gap-3 text-left hover:bg-slate-900/[0.025] -mx-2 px-2 rounded-xl transition-colors cursor-pointer"
+                    className="w-full min-h-[44px] py-2 flex items-center justify-between gap-3 text-left hover:bg-slate-900/[0.025] -mx-2 px-2 rounded-xl transition-colors cursor-pointer"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="w-7 h-7 rounded-xl bg-white/85 border border-slate-900/[0.06] flex items-center justify-center shrink-0">
+                      <span className="w-7 h-7 rounded-lg bg-slate-900/[0.04] flex items-center justify-center shrink-0">
                         {task.icon}
                       </span>
                       <span className="text-xs font-medium text-slate-700 truncate">
@@ -729,7 +718,7 @@ export function DashboardPage() {
             </GlassCard>
 
             {/* Right 7 cols: Recent Operations */}
-            <GlassCard className="lg:col-span-7 min-w-0 space-y-2.5">
+            <GlassCard className="lg:col-span-7 min-w-0 space-y-2">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-slate-900">最近操作</h2>
                 <button
@@ -747,11 +736,11 @@ export function DashboardPage() {
                   {logs.map((log) => (
                     <div
                       key={log.id}
-                      className="py-2.5 flex items-center justify-between gap-3 text-xs"
+                      className="min-h-[44px] py-2 flex items-center justify-between gap-3 text-xs"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <span
-                          className={`w-2 h-2 rounded-full shrink-0 ${
+                          className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                             log.result === 'success' ? 'bg-[#10b981]' : 'bg-red-500'
                           }`}
                         />

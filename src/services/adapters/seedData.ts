@@ -572,7 +572,7 @@ export function createInitialSeedDatabase(): MockDatabase {
       categoryOrBatch: '开幕首日限定特邀赠票',
       mode: 'normal',
       outcome: 'success',
-      message: '核销成功（演示模式模拟服务端确认）',
+      message: '核销成功，已允许入场',
       operatorId: 'usr-scanner',
       operatorName: '吴启帆',
       deviceLabel: '东门 2 号通道扫码终端',

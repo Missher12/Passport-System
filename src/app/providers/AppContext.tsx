@@ -260,7 +260,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       pushToast({
         tone: 'success',
         title: `欢迎回来，${res.user.displayName}`,
-        detail: res.isMockDemo ? '当前以演示模式登录（Mock Adapter）' : '服务端认证成功',
       });
     },
     [pushToast, refreshCore],

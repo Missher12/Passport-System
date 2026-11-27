@@ -142,9 +142,9 @@ function SettingsRow({
 }) {
   if (!onClick) {
     return (
-      <div className="px-4 py-3.5 flex items-center justify-between gap-3">
+      <div className="min-h-[52px] px-4 py-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-          <span className="w-8 h-8 rounded-xl bg-slate-900/[0.05] text-slate-700 flex items-center justify-center shrink-0">
+          <span className="w-8 h-8 rounded-lg bg-slate-900/[0.05] text-slate-700 flex items-center justify-center shrink-0">
             {icon}
           </span>
           <span className="text-sm font-medium text-slate-900 truncate">{label}</span>
@@ -158,11 +158,11 @@ function SettingsRow({
     <button
       type="button"
       onClick={onClick}
-      className="w-full px-4 py-3.5 flex items-center justify-between gap-3 text-left hover:bg-white/65 transition-colors cursor-pointer"
+      className="w-full min-h-[52px] px-4 py-3 flex items-center justify-between gap-3 text-left hover:bg-white/65 transition-colors cursor-pointer"
     >
       <div className="flex items-center gap-3 min-w-0">
         <span
-          className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+          className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
             danger
               ? 'bg-red-500/10 text-red-600'
               : 'bg-[#0071e3]/10 text-[#0071e3]'
@@ -196,7 +196,7 @@ export function SettingsHomePage() {
   const hasSystemLinks = canAccessModule('settings') || canAccessModule('audit_logs');
 
   return (
-    <PageContainer className="space-y-6">
+    <PageContainer className="space-y-5">
       {/* 账户 */}
       <SettingsGroup title="账户">
         <button
@@ -313,7 +313,7 @@ export function SettingsHomePage() {
         <SettingsRow
           icon={<Shield className="w-4 h-4" />}
           label="系统版本"
-          value={<span className="numeric-text">v5.0.0</span>}
+          value={<span className="numeric-text">v5.1.0</span>}
         />
       </SettingsGroup>
 
@@ -1381,6 +1381,7 @@ export function AuditLogsPage() {
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [actionFilter, setActionFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
+  const [detailLog, setDetailLog] = useState<AuditLogEntry | null>(null);
 
   useEffect(() => {
     getApiClient()
@@ -1407,7 +1408,11 @@ export function AuditLogsPage() {
       header: '时间',
       sortable: true,
       sortValue: (l) => l.timestamp,
-      render: (l) => <span className="date-number text-xs">{formatDateTimeDisplay(l.timestamp)}</span>,
+      render: (l) => (
+        <span className="date-number text-xs whitespace-nowrap">
+          {formatDateTimeDisplay(l.timestamp)}
+        </span>
+      ),
     },
     {
       key: 'actor',
@@ -1423,28 +1428,20 @@ export function AuditLogsPage() {
       key: 'act',
       header: '操作类型',
       render: (l) => (
-        <div className="text-xs">
-          <div className="font-medium text-slate-800">{AUDIT_ACTION_LABELS[l.action] ?? l.action}</div>
-          <div className="text-slate-400">{l.activityName}</div>
-        </div>
+        <span className="text-xs font-medium text-slate-800">
+          {AUDIT_ACTION_LABELS[l.action] ?? l.action}
+        </span>
       ),
     },
     {
       key: 'target',
-      header: '变更记录',
+      header: '变更对象',
       render: (l) => (
-        <div className="text-xs space-y-0.5">
-          <div className="font-medium text-slate-900">{l.targetLabel}</div>
-          <div className="text-slate-500">
-            {l.beforeState} → {l.afterState}
-          </div>
+        <div className="text-xs min-w-0 max-w-[260px]">
+          <div className="font-medium text-slate-900 truncate">{l.targetLabel}</div>
+          <div className="text-slate-400 truncate">{l.afterState}</div>
         </div>
       ),
-    },
-    {
-      key: 'reason',
-      header: '说明',
-      render: (l) => <span className="text-xs text-slate-600">{l.reason}</span>,
     },
     {
       key: 'res',
@@ -1454,6 +1451,16 @@ export function AuditLogsPage() {
           tone={l.result === 'success' ? 'success' : 'danger'}
           label={l.result === 'success' ? '成功' : '已拦截'}
         />
+      ),
+    },
+    {
+      key: 'actions',
+      header: '详情',
+      align: 'right',
+      render: (l) => (
+        <GlassButton size="sm" variant="ghost" onClick={() => setDetailLog(l)}>
+          详情
+        </GlassButton>
       ),
     },
   ];
@@ -1507,6 +1514,68 @@ export function AuditLogsPage() {
           URL.revokeObjectURL(url);
         }}
       />
+
+      <GlassDialog
+        open={Boolean(detailLog)}
+        title="操作日志详情"
+        onClose={() => setDetailLog(null)}
+        maxWidthClass="max-w-md"
+      >
+        {detailLog && (
+          <div className="space-y-4 text-xs">
+            <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-900/[0.06]">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-slate-900 truncate">
+                  {detailLog.targetLabel}
+                </div>
+                <div className="text-slate-500 mt-0.5">
+                  {AUDIT_ACTION_LABELS[detailLog.action] ?? detailLog.action}
+                </div>
+              </div>
+              <StatusIndicator
+                tone={detailLog.result === 'success' ? 'success' : 'danger'}
+                label={detailLog.result === 'success' ? '成功' : '已拦截'}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="text-slate-400">操作时间</div>
+                <div className="text-slate-800 date-number mt-0.5">
+                  {formatDateTimeDisplay(detailLog.timestamp)}
+                </div>
+              </div>
+              <div>
+                <div className="text-slate-400">操作人</div>
+                <div className="text-slate-800 font-medium mt-0.5">
+                  {detailLog.actorName}（{detailLog.actorRole}）
+                </div>
+              </div>
+              <div className="col-span-2">
+                <div className="text-slate-400">所属活动</div>
+                <div className="text-slate-800 mt-0.5">{detailLog.activityName}</div>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-900/[0.06] space-y-2.5">
+              <div>
+                <div className="text-slate-400">变更前</div>
+                <div className="text-slate-700 mt-0.5">{detailLog.beforeState}</div>
+              </div>
+              <div>
+                <div className="text-slate-400">变更后</div>
+                <div className="text-slate-900 font-medium mt-0.5">{detailLog.afterState}</div>
+              </div>
+              {detailLog.reason && (
+                <div>
+                  <div className="text-slate-400">原因说明</div>
+                  <div className="text-slate-700 mt-0.5 leading-relaxed">{detailLog.reason}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </GlassDialog>
     </PageContainer>
   );
 }

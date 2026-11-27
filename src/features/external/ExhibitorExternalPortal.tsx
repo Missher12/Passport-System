@@ -17,7 +17,6 @@ import {
   GlassInput,
   GlassSelect,
   GlassTabs,
-  PageHeader,
   StatusIndicator,
 } from '../../components/glass/GlassPrimitives';
 import { GlassDialog, GlassUpload, SmartCaptchaModal } from '../../components/glass/GlassOverlay';
@@ -296,11 +295,7 @@ export function ExhibitorExternalPortal() {
 
   if (!verifiedExhibitor) {
     return (
-      <PageContainer className="space-y-6">
-        <PageHeader
-          title={entryMode === 'onsite_extra' ? '现场加证登记' : '展商登记'}
-        />
-
+      <PageContainer className="space-y-5">
         {entryMode === 'verify' ? (
           <GlassCard elevated padding="lg" className="space-y-5">
             <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-900/[0.07]">
@@ -536,41 +531,37 @@ export function ExhibitorExternalPortal() {
   const avatarDoneCount = members.filter((m) => Boolean(m.avatarUrl)).length;
 
   return (
-    <PageContainer className="space-y-6">
-      <PageHeader
-        title={`${verifiedExhibitor.boothNumber} · ${verifiedExhibitor.boothName}`}
-        subtitle={`主联系人：${verifiedExhibitor.primaryContactName}`}
-        actions={
-          <GlassButton variant="secondary" onClick={() => setVerifiedExhibitor(null)}>
-            <LogOut className="w-4 h-4" />
-            退出
-          </GlassButton>
-        }
-      />
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <GlassCard className="min-w-0">
-          <p className="text-xs text-slate-500">当前阶段</p>
-          <p className="text-base font-semibold text-slate-900 mt-1">
-            {portalPhase === 'avatar' ? '头像补充' : '人员登记'}
-          </p>
-        </GlassCard>
-        <GlassCard className="min-w-0">
-          <p className="text-xs text-slate-500">申请名额</p>
-          <p className="text-2xl font-semibold text-slate-900 stat-number mt-1">
-            {normalUsed} / {verifiedExhibitor.quota}
-          </p>
-          <p className="text-xs text-slate-500 mt-1 numeric-text">
-            剩余 {remainingQuota} 人 · 加证 {verifiedExhibitor.onsiteExtraCount} 人
-          </p>
-        </GlassCard>
-        <GlassCard className="min-w-0">
-          <p className="text-xs text-slate-500">已上传头像</p>
-          <p className="text-2xl font-semibold text-slate-900 stat-number mt-1">
-            {avatarDoneCount} / {members.length}
-          </p>
-        </GlassCard>
-      </div>
+    <PageContainer className="space-y-5">
+      <GlassCard padding="sm" className="flex flex-wrap items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-base font-semibold text-slate-900 numeric-text">
+              {verifiedExhibitor.boothNumber} · {verifiedExhibitor.boothName}
+            </span>
+            <StatusIndicator
+              tone="info"
+              label={portalPhase === 'avatar' ? '头像补充阶段' : '人员登记阶段'}
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs text-slate-500 stat-number">
+            <span>主联系人：{verifiedExhibitor.primaryContactName}</span>
+            <span>
+              名额 {normalUsed}/{verifiedExhibitor.quota}（余 {remainingQuota}
+              {verifiedExhibitor.onsiteExtraCount > 0
+                ? ` · 加证 ${verifiedExhibitor.onsiteExtraCount}`
+                : ''}
+              ）
+            </span>
+            <span>
+              头像 {avatarDoneCount}/{members.length}
+            </span>
+          </div>
+        </div>
+        <GlassButton size="sm" variant="ghost" onClick={() => setVerifiedExhibitor(null)}>
+          <LogOut className="w-3.5 h-3.5" />
+          退出
+        </GlassButton>
+      </GlassCard>
 
       <GlassTabs
         value={spaceTab}

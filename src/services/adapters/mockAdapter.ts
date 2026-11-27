@@ -2026,7 +2026,7 @@ export class MockApiAdapter implements ApiClient {
                 ...preview,
                 valid: true,
                 outcome: 'success',
-                message: '证件核销成功（演示模式模拟服务端原子确认）',
+                message: '证件核验通过，已允许入场',
                 alreadyRedeemedAt: now,
               };
             }
@@ -2050,7 +2050,7 @@ export class MockApiAdapter implements ApiClient {
                 outcome: 'success',
                 statusLabel: '已核销',
                 alreadyRedeemedAt: now,
-                message: '赠票核销成功（演示模式模拟服务端原子确认）',
+                message: '赠票核销成功，已允许入场',
               };
             }
           }

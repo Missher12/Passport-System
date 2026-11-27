@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ChevronDown,
+  ChevronUp,
   Copy,
   Download,
   ExternalLink,
@@ -13,6 +15,7 @@ import { useApp } from '../../app/providers/AppContext';
 import { PageContainer } from '../../components/layout/PageContainer';
 import {
   AllActivityReadonlyNotice,
+  GlassActionMenu,
   GlassBadge,
   GlassButton,
   GlassCard,
@@ -81,6 +84,7 @@ export function ExhibitorsPage() {
     activities,
     realtimeVersion,
     canAccessModule,
+    navigateAdmin,
     switchPortal,
     pushToast,
   } = useApp();
@@ -97,6 +101,7 @@ export function ExhibitorsPage() {
   const [search, setSearch] = useState('');
   const [memberSearch, setMemberSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<CertificateStatus | 'all'>('all');
+  const [expandedAvatarExIds, setExpandedAvatarExIds] = useState<Record<string, boolean>>({});
 
   // Per-row, per-field sensitive reveal map (auto-cleared on scope/user change or unmount)
   const [revealedFields, setRevealedFields] = useState<Record<string, boolean>>({});
@@ -523,26 +528,32 @@ export function ExhibitorsPage() {
       render: (e) => {
         const actMode = activityById[e.activityId]?.defaultEntryMode ?? 'B_UNIFIED';
         return (
-          <div className="flex items-center justify-end gap-1.5">
+          <div className="flex items-center justify-end gap-1">
             <GlassButton size="sm" variant="secondary" onClick={() => setDetailExhibitor(e)}>
               详情
             </GlassButton>
-            <GlassButton
-              size="sm"
-              variant="ghost"
-              onClick={() =>
-                switchPortal('exhibitor', {
-                  exhibitorToken:
-                    (e.entryModeOverride ?? actMode) === 'A_INDEPENDENT'
-                      ? e.independentToken
-                      : undefined,
-                  exhibitorPrefillBooth: e.boothNumber,
-                })
-              }
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              展商入口
-            </GlassButton>
+            <GlassActionMenu
+              label={`更多操作：${e.boothNumber}`}
+              items={[
+                {
+                  label: '打开展商入口',
+                  icon: <ExternalLink className="w-3.5 h-3.5" />,
+                  onClick: () =>
+                    switchPortal('exhibitor', {
+                      exhibitorToken:
+                        (e.entryModeOverride ?? actMode) === 'A_INDEPENDENT'
+                          ? e.independentToken
+                          : undefined,
+                      exhibitorPrefillBooth: e.boothNumber,
+                    }),
+                },
+                {
+                  label: '复制商务密码',
+                  icon: <Copy className="w-3.5 h-3.5" />,
+                  onClick: () => copyText(e.businessPassword, '商务密码'),
+                },
+              ]}
+            />
           </div>
         );
       },
@@ -674,7 +685,9 @@ export function ExhibitorsPage() {
 
   return (
     <PageContainer className="space-y-5">
-      {isAllScope && <AllActivityReadonlyNotice />}
+      {isAllScope && (
+        <AllActivityReadonlyNotice onSelectActivity={() => navigateAdmin('activities')} />
+      )}
 
       <GlassToolbar>
         <GlassTabs
@@ -770,43 +783,126 @@ export function ExhibitorsPage() {
       )}
 
       {subTab === 'avatars' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {exhibitors.map((ex) => {
-            const exMembers = members.filter(
-              (m) => m.exhibitorId === ex.id && m.status !== 'voided',
-            );
-            const done = exMembers.filter((m) => Boolean(m.avatarUrl)).length;
-            const pct = exMembers.length > 0 ? Math.round((done / exMembers.length) * 100) : 0;
-            return (
-              <GlassCard key={ex.id} className="space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <span className="font-semibold text-[#0071e3] numeric-text mr-2">
-                      {ex.boothNumber}
-                    </span>
-                    <span className="font-semibold text-slate-900">{ex.boothName}</span>
+        <GlassCard padding="none" className="overflow-hidden">
+          {exhibitors.length === 0 ? (
+            <div className="py-12 text-center text-sm text-slate-400">暂无展商数据</div>
+          ) : (
+            <div className="divide-y divide-slate-900/[0.06]">
+              <div className="hidden sm:grid sm:grid-cols-[100px_1fr_200px_100px] gap-4 px-4 py-2.5 text-xs font-medium text-slate-500 bg-white/40">
+                <span>摊位号</span>
+                <span>展位名称</span>
+                <span>头像进度</span>
+                <span className="text-right">操作</span>
+              </div>
+              {exhibitors.map((ex) => {
+                const exMembers = members.filter(
+                  (m) => m.exhibitorId === ex.id && m.status !== 'voided',
+                );
+                const done = exMembers.filter((m) => Boolean(m.avatarUrl)).length;
+                const pct = exMembers.length > 0 ? Math.round((done / exMembers.length) * 100) : 0;
+                const expanded = Boolean(expandedAvatarExIds[ex.id]);
+
+                return (
+                  <div key={ex.id}>
+                    <div className="px-4 py-3.5 grid grid-cols-1 sm:grid-cols-[100px_1fr_200px_100px] items-center gap-2.5 sm:gap-4 hover:bg-white/55 transition-colors">
+                      <div className="flex items-center justify-between sm:block">
+                        <span className="font-semibold text-[#0071e3] numeric-text text-sm">
+                          {ex.boothNumber}
+                        </span>
+                        <span className="sm:hidden text-xs font-semibold text-slate-900 stat-number">
+                          {done} / {exMembers.length} ({pct}%)
+                        </span>
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-slate-900 truncate">
+                          {ex.boothName}
+                        </div>
+                        {isAllScope && (
+                          <div className="text-xs text-slate-400 truncate mt-0.5">
+                            {activityById[ex.activityId]?.name ?? ex.activityId}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="hidden sm:flex items-center justify-between text-xs stat-number">
+                          <span className="font-medium text-slate-800">
+                            {done} / {exMembers.length}
+                          </span>
+                          <span className="text-slate-500">{pct}%</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-slate-900/[0.07] overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-300 ${
+                              pct === 100 ? 'bg-[#10b981]' : 'bg-[#0071e3]'
+                            }`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedAvatarExIds((prev) => ({
+                              ...prev,
+                              [ex.id]: !prev[ex.id],
+                            }))
+                          }
+                          className="inline-flex items-center gap-1 h-8 px-2.5 rounded-full text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-900/[0.05] transition-colors cursor-pointer"
+                        >
+                          {expanded ? '收起' : '展开人员'}
+                          {expanded ? (
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          ) : (
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {expanded && (
+                      <div className="px-4 pb-3.5 pt-1 bg-slate-900/[0.02] border-t border-slate-900/[0.04]">
+                        {exMembers.length === 0 ? (
+                          <p className="text-xs text-slate-400 py-2">暂无已登记人员</p>
+                        ) : (
+                          <div className="divide-y divide-slate-900/[0.05]">
+                            {exMembers.map((m) => (
+                              <div
+                                key={m.id}
+                                className="py-2 flex items-center justify-between gap-3 text-xs"
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <span className="font-medium text-[#0071e3] order-number shrink-0">
+                                    {m.memberCode}
+                                  </span>
+                                  <span className="font-medium text-slate-900 truncate">
+                                    {m.name}
+                                  </span>
+                                  {m.isPrimaryContact && (
+                                    <span className="text-[11px] text-slate-400 shrink-0">
+                                      主联系人
+                                    </span>
+                                  )}
+                                </div>
+                                <StatusIndicator
+                                  tone={m.avatarUrl ? 'success' : 'warning'}
+                                  label={m.avatarUrl ? '已上传' : '待补拍'}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <span className="text-sm font-semibold text-slate-900 stat-number">
-                    {done} / {exMembers.length} ({pct}%)
-                  </span>
-                </div>
-                <div className="h-2 rounded-full bg-slate-900/[0.07] overflow-hidden">
-                  <div
-                    className="h-full bg-[#0071e3] transition-all duration-300"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-                <div className="flex flex-wrap gap-2 text-xs">
-                  {exMembers.map((m) => (
-                    <span key={m.id} className="text-slate-600 numeric-text">
-                      {m.memberCode} {m.name}（{m.avatarUrl ? '已上传' : '待补拍'}）
-                    </span>
-                  ))}
-                </div>
-              </GlassCard>
-            );
-          })}
-        </div>
+                );
+              })}
+            </div>
+          )}
+        </GlassCard>
       )}
 
       <GlassDialog

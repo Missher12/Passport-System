@@ -13,7 +13,6 @@ import {
   GlassInput,
   GlassSelect,
   LoadingState,
-  PageHeader,
   StatusIndicator,
 } from '../../components/glass/GlassPrimitives';
 import { GlassUpload, SmartCaptchaModal } from '../../components/glass/GlassOverlay';
@@ -488,65 +487,14 @@ export function GiftExternalPortal() {
     }
   };
 
-  const pageTitle =
-    viewMode === 'invited'
-      ? '受邀赠票核验'
-      : viewMode === 'retrieve'
-        ? '找回电子赠票'
-        : '活动赠票领取';
-
   return (
-    <PageContainer className="space-y-6">
-      <PageHeader
-        title={pageTitle}
-        subtitle={
-          viewMode === 'invited' && inviteMeta?.activityName && inviteMeta.activityName !== currentAct.name
-            ? inviteMeta.activityName
-            : undefined
-        }
-        actions={
-          !issuedTicket && viewMode === 'self' ? (
-            <GlassButton
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setViewMode('retrieve');
-                setErrorMsg(null);
-                setRetrievedTickets(null);
-              }}
-            >
-              <Search className="w-3.5 h-3.5" />
-              找回已领赠票
-            </GlassButton>
-          ) : !issuedTicket && viewMode === 'retrieve' ? (
-            <GlassButton
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setViewMode('self');
-                setErrorMsg(null);
-                setRetrievedTickets(null);
-              }}
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              返回领票
-            </GlassButton>
-          ) : null
-        }
-      />
-
+    <PageContainer className="space-y-5">
       {issuedTicket ? (
         <div className="space-y-5">
-          <GlassCard elevated className="text-center space-y-2">
-            <CheckCircle2 className="w-10 h-10 text-[#15803d] mx-auto" />
-            <h2 className="text-lg font-semibold text-slate-900">电子赠票已签发</h2>
-            <p className="text-xs text-slate-600 date-number">
-              有效使用日期：{issuedTicket.useDate}
-            </p>
-            <p className="text-xs text-slate-500">
-              关闭页面后可随时通过「找回已领赠票」凭实名信息重新获取动态入场码。
-            </p>
-          </GlassCard>
+          <div className="flex items-center justify-center gap-2 text-sm font-semibold text-[#15803d]">
+            <CheckCircle2 className="w-5 h-5" />
+            <span>电子赠票已签发 · 有效日期 <span className="date-number">{issuedTicket.useDate}</span></span>
+          </div>
 
           <ElectronicCredentialCard
             credentialKind="gift"
@@ -588,6 +536,31 @@ export function GiftExternalPortal() {
         </div>
       ) : viewMode === 'self' ? (
         <GlassCard elevated padding="lg" className="space-y-5">
+          <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-900/[0.06]">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="text-base font-semibold text-slate-900 truncate">
+                {currentBatch ? currentBatch.name : '赠票领取'}
+              </span>
+              {currentBatch && (
+                <span className="text-xs text-slate-500 numeric-text shrink-0">
+                  余 {Math.max(0, currentBatch.totalQuota - currentBatch.claimedCount)} 张
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setViewMode('retrieve');
+                setErrorMsg(null);
+                setRetrievedTickets(null);
+              }}
+              className="inline-flex items-center gap-1 text-xs font-medium text-[#0071e3] hover:text-[#005bb8] cursor-pointer shrink-0"
+            >
+              <Search className="w-3.5 h-3.5" />
+              找回已领赠票
+            </button>
+          </div>
+
           {!currentBatch ? (
             <div className="text-center py-8 space-y-2">
               <Ticket className="w-8 h-8 text-slate-400 mx-auto" />
@@ -601,7 +574,7 @@ export function GiftExternalPortal() {
               }}
               className="space-y-4"
             >
-              {!externalContext.giftBatchId && batches.length > 1 ? (
+              {!externalContext.giftBatchId && batches.length > 1 && (
                 <GlassSelect
                   label="选择赠票批次"
                   value={currentBatch.id}
@@ -611,13 +584,6 @@ export function GiftExternalPortal() {
                     label: `${b.name}（余 ${Math.max(0, b.totalQuota - b.claimedCount)} 张）`,
                   }))}
                 />
-              ) : (
-                <div className="flex items-center justify-between pb-3 border-b border-slate-900/[0.06]">
-                  <span className="text-base font-semibold text-slate-900">{currentBatch.name}</span>
-                  <span className="text-xs text-slate-500 numeric-text">
-                    剩余 {Math.max(0, currentBatch.totalQuota - currentBatch.claimedCount)} 张
-                  </span>
-                </div>
               )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -880,6 +846,21 @@ export function GiftExternalPortal() {
         /* Mode B: Electronic Gift Ticket Retrieval (Read-only, 5-field identity + Smart CAPTCHA) */
         <div className="space-y-5">
           <GlassCard elevated padding="lg" className="space-y-4">
+            <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-900/[0.06]">
+              <h2 className="text-base font-semibold text-slate-900">找回电子赠票</h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setViewMode('self');
+                  setErrorMsg(null);
+                  setRetrievedTickets(null);
+                }}
+                className="inline-flex items-center gap-1 text-xs font-medium text-[#0071e3] hover:text-[#005bb8] cursor-pointer shrink-0"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                返回领票
+              </button>
+            </div>
             <form onSubmit={startRetrieveFlow} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <GlassInput

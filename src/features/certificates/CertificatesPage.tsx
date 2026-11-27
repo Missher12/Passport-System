@@ -11,6 +11,7 @@ import { useApp } from '../../app/providers/AppContext';
 import { PageContainer } from '../../components/layout/PageContainer';
 import {
   AllActivityReadonlyNotice,
+  GlassActionMenu,
   GlassBadge,
   GlassButton,
   GlassCard,
@@ -70,6 +71,7 @@ export function CertificatesPage() {
     activities,
     realtimeVersion,
     canAccessModule,
+    navigateAdmin,
     switchPortal,
     pushToast,
   } = useApp();
@@ -457,53 +459,58 @@ export function CertificatesPage() {
       key: 'actions',
       header: '操作',
       align: 'right',
-      render: (m) => (
-        <div className="flex items-center justify-end gap-1.5">
-          <GlassButton size="sm" variant="secondary" onClick={() => setPreviewMember(m)}>
-            凭证
-          </GlassButton>
-          {!isAllScope && m.status !== 'frozen' && m.status !== 'voided' && (
-            <GlassButton
-              size="sm"
-              variant="ghost"
-              onClick={async () => {
-                if (!user || !currentAct) return;
-                await getApiClient().members.setStatus(
-                  currentAct.id,
-                  m.id,
-                  'frozen',
-                  '证件管理员人工冻结',
-                  user,
-                );
-                pushToast({ tone: 'warning', title: `${m.memberCode} 已冻结` });
-                await loadData();
-              }}
-            >
-              冻结
+      render: (m) => {
+        const menuItems =
+          !isAllScope && m.status !== 'frozen' && m.status !== 'voided'
+            ? [
+                {
+                  label: '冻结证件',
+                  tone: 'danger' as const,
+                  onClick: async () => {
+                    if (!user || !currentAct) return;
+                    await getApiClient().members.setStatus(
+                      currentAct.id,
+                      m.id,
+                      'frozen',
+                      '证件管理员人工冻结',
+                      user,
+                    );
+                    pushToast({ tone: 'warning', title: `${m.memberCode} 已冻结` });
+                    await loadData();
+                  },
+                },
+              ]
+            : !isAllScope && m.status === 'frozen'
+              ? [
+                  {
+                    label: '解除冻结',
+                    onClick: async () => {
+                      if (!user || !currentAct) return;
+                      await getApiClient().members.setStatus(
+                        currentAct.id,
+                        m.id,
+                        m.avatarUrl ? 'credential_generated' : 'waiting_avatar',
+                        '解除冻结恢复正常状态',
+                        user,
+                      );
+                      pushToast({ tone: 'success', title: `${m.memberCode} 已解冻` });
+                      await loadData();
+                    },
+                  },
+                ]
+              : [];
+
+        return (
+          <div className="flex items-center justify-end gap-1">
+            <GlassButton size="sm" variant="secondary" onClick={() => setPreviewMember(m)}>
+              凭证
             </GlassButton>
-          )}
-          {!isAllScope && m.status === 'frozen' && (
-            <GlassButton
-              size="sm"
-              variant="ghost"
-              onClick={async () => {
-                if (!user || !currentAct) return;
-                await getApiClient().members.setStatus(
-                  currentAct.id,
-                  m.id,
-                  m.avatarUrl ? 'credential_generated' : 'waiting_avatar',
-                  '解除冻结恢复正常状态',
-                  user,
-                );
-                pushToast({ tone: 'success', title: `${m.memberCode} 已解冻` });
-                await loadData();
-              }}
-            >
-              解冻
-            </GlassButton>
-          )}
-        </div>
-      ),
+            {menuItems.length > 0 && (
+              <GlassActionMenu items={menuItems} label={`更多操作：${m.memberCode}`} />
+            )}
+          </div>
+        );
+      },
     },
   ];
 
@@ -513,7 +520,9 @@ export function CertificatesPage() {
 
   return (
     <PageContainer className="space-y-5">
-      {isAllScope && <AllActivityReadonlyNotice />}
+      {isAllScope && (
+        <AllActivityReadonlyNotice onSelectActivity={() => navigateAdmin('activities')} />
+      )}
 
       <GlassToolbar>
         <GlassTabs
@@ -587,9 +596,8 @@ export function CertificatesPage() {
       )}
 
       {tab === 'individual' && (
-        <div className="max-w-2xl space-y-5">
-          <GlassCard className="space-y-4">
-            <h2 className="text-base font-semibold text-slate-900">个人扫码领证</h2>
+        <GlassCard className="space-y-4">
+            <h2 className="text-sm font-semibold text-slate-900">个人扫码领证</h2>
             <div className="flex gap-2">
               <div className="flex-1">
                 <GlassInput
@@ -606,8 +614,8 @@ export function CertificatesPage() {
             </div>
 
             {foundMember && (
-              <div className="glass-surface-subtle p-4 flex flex-col sm:flex-row items-center gap-4">
-                <div className="w-20 h-20 rounded-2xl overflow-hidden bg-slate-200 shrink-0">
+              <div className="pt-4 border-t border-slate-900/[0.06] flex flex-col sm:flex-row items-center gap-4">
+                <div className="w-16 h-16 rounded-2xl overflow-hidden bg-slate-200 shrink-0">
                   {foundMember.avatarUrl ? (
                     <img
                       src={foundMember.avatarUrl}
@@ -646,204 +654,242 @@ export function CertificatesPage() {
                 </GlassButton>
               </div>
             )}
-          </GlassCard>
-        </div>
+        </GlassCard>
       )}
 
       {tab === 'onsite_extra' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <GlassCard className="lg:col-span-7 min-w-0 space-y-4">
-            <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-              <UserPlus className="w-4 h-4 text-[#0071e3]" />
-              现场加证
-            </h2>
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            <GlassCard className="lg:col-span-7 min-w-0 space-y-4">
+              <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-900/[0.06]">
+                <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                  <UserPlus className="w-4 h-4 text-[#0071e3]" />
+                  签发现场加证码
+                </h2>
+              </div>
 
-            <form onSubmit={handleIssueOnsiteToken} className="space-y-4">
-              <div className="flex flex-wrap items-end gap-2">
-                <div className="flex-1 min-w-[200px]">
+              <form onSubmit={handleIssueOnsiteToken} className="space-y-4">
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="flex-1 min-w-[200px]">
+                    <GlassSelect
+                      label="选择展商"
+                      value={extraExId}
+                      onValueChange={setExtraExId}
+                      options={exhibitors.map((ex) => ({
+                        value: ex.id,
+                        label: `${ex.boothNumber} · ${ex.boothName}`,
+                      }))}
+                    />
+                  </div>
+                  <GlassButton
+                    size="md"
+                    variant="secondary"
+                    disabled={isAllScope || !extraExId}
+                    onClick={() => prefillExtraVerify(extraExId)}
+                  >
+                    带入档案
+                  </GlassButton>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <GlassInput
+                    label="摊位号"
+                    required
+                    numeric
+                    value={extraVerify.boothNumber}
+                    onChange={(e) => setExtraVerify({ ...extraVerify, boothNumber: e.target.value })}
+                  />
+                  <GlassInput
+                    label="展位名称"
+                    required
+                    value={extraVerify.boothName}
+                    onChange={(e) => setExtraVerify({ ...extraVerify, boothName: e.target.value })}
+                  />
+                  <GlassInput
+                    label="主要联系人"
+                    required
+                    value={extraVerify.primaryContactName}
+                    onChange={(e) =>
+                      setExtraVerify({ ...extraVerify, primaryContactName: e.target.value })
+                    }
+                  />
                   <GlassSelect
-                    label="选择展商"
-                    value={extraExId}
-                    onValueChange={setExtraExId}
-                    options={exhibitors.map((ex) => ({
-                      value: ex.id,
-                      label: `${ex.boothNumber} · ${ex.boothName}`,
-                    }))}
+                    label="证件类型"
+                    value={extraVerify.primaryIdType}
+                    onValueChange={(val) =>
+                      setExtraVerify({ ...extraVerify, primaryIdType: val as IdType })
+                    }
+                    options={Object.entries(ID_TYPE_LABELS).map(([v, l]) => ({ value: v, label: l }))}
+                  />
+                  <GlassInput
+                    label="证件号码"
+                    required
+                    numeric
+                    value={extraVerify.primaryIdNumber}
+                    onChange={(e) =>
+                      setExtraVerify({ ...extraVerify, primaryIdNumber: e.target.value })
+                    }
+                  />
+                  <GlassInput
+                    label="联系电话"
+                    required
+                    numeric
+                    value={extraVerify.phone}
+                    onChange={(e) => setExtraVerify({ ...extraVerify, phone: e.target.value })}
+                  />
+                  <GlassInput
+                    label="商务密码"
+                    required
+                    numeric
+                    value={extraVerify.businessPassword}
+                    onChange={(e) =>
+                      setExtraVerify({ ...extraVerify, businessPassword: e.target.value })
+                    }
+                  />
+                  <GlassInput
+                    label="新增人数"
+                    type="number"
+                    min={1}
+                    max={20}
+                    required
+                    numeric
+                    value={extraCount}
+                    onChange={(e) => setExtraCount(e.target.value)}
                   />
                 </div>
-                <GlassButton
-                  size="md"
-                  variant="secondary"
-                  disabled={isAllScope || !extraExId}
-                  onClick={() => prefillExtraVerify(extraExId)}
-                >
-                  带入展商档案
-                </GlassButton>
-              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <GlassInput
-                  label="摊位号"
+                  label="新增原因"
                   required
-                  numeric
-                  value={extraVerify.boothNumber}
-                  onChange={(e) => setExtraVerify({ ...extraVerify, boothNumber: e.target.value })}
+                  value={extraReason}
+                  onChange={(e) => setExtraReason(e.target.value)}
+                  placeholder="填写加证原因"
                 />
-                <GlassInput
-                  label="展位名称"
-                  required
-                  value={extraVerify.boothName}
-                  onChange={(e) => setExtraVerify({ ...extraVerify, boothName: e.target.value })}
-                />
-                <GlassInput
-                  label="主要联系人"
-                  required
-                  value={extraVerify.primaryContactName}
-                  onChange={(e) =>
-                    setExtraVerify({ ...extraVerify, primaryContactName: e.target.value })
-                  }
-                />
-                <GlassSelect
-                  label="证件类型"
-                  value={extraVerify.primaryIdType}
-                  onValueChange={(val) =>
-                    setExtraVerify({ ...extraVerify, primaryIdType: val as IdType })
-                  }
-                  options={Object.entries(ID_TYPE_LABELS).map(([v, l]) => ({ value: v, label: l }))}
-                />
-                <GlassInput
-                  label="证件号码"
-                  required
-                  numeric
-                  value={extraVerify.primaryIdNumber}
-                  onChange={(e) =>
-                    setExtraVerify({ ...extraVerify, primaryIdNumber: e.target.value })
-                  }
-                />
-                <GlassInput
-                  label="联系电话"
-                  required
-                  numeric
-                  value={extraVerify.phone}
-                  onChange={(e) => setExtraVerify({ ...extraVerify, phone: e.target.value })}
-                />
-                <GlassInput
-                  label="商务密码"
-                  required
-                  numeric
-                  value={extraVerify.businessPassword}
-                  onChange={(e) =>
-                    setExtraVerify({ ...extraVerify, businessPassword: e.target.value })
-                  }
-                />
-                <GlassInput
-                  label="新增人数"
-                  type="number"
-                  min={1}
-                  max={20}
-                  required
-                  numeric
-                  value={extraCount}
-                  onChange={(e) => setExtraCount(e.target.value)}
-                />
-              </div>
 
-              <GlassInput
-                label="新增原因"
-                required
-                value={extraReason}
-                onChange={(e) => setExtraReason(e.target.value)}
-                placeholder="填写加证原因"
-              />
-
-              <div className="flex justify-end">
-                <GlassButton type="submit" variant="primary" disabled={isAllScope}>
-                  生成一次性加证码
-                </GlassButton>
-              </div>
-            </form>
-          </GlassCard>
-
-          <div className="lg:col-span-5 space-y-4">
-            {issuedToken ? (
-              <GlassCard elevated className="text-center space-y-3">
-                <h3 className="text-base font-semibold text-slate-900">
-                  {issuedToken.boothNumber} 现场加证二维码
-                </h3>
-                <p className="text-xs text-slate-500">
-                  原因：{issuedToken.reason} · 已用{' '}
-                  <span className="numeric-text">
-                    {issuedToken.usedCount}/{issuedToken.extraCount}
-                  </span>
-                </p>
-                <div className="flex justify-center">
-                  <GlassQRCode value={issuedToken.token} size={172} label="一次性现场加证二维码" />
+                <div className="flex justify-end pt-1">
+                  <GlassButton type="submit" variant="primary" disabled={isAllScope}>
+                    生成一次性加证码
+                  </GlassButton>
                 </div>
-                <p className="text-xs font-medium text-[#0071e3] numeric-text">
-                  加证码：{issuedToken.token}
-                </p>
-                <StatusIndicator
-                  tone={issuedToken.used ? 'danger' : 'success'}
-                  label={issuedToken.used ? '已失效' : '待登记'}
-                />
-                {!issuedToken.used && (
-                  <div className="flex flex-wrap justify-center gap-2 pt-2">
-                    <GlassButton
-                      size="sm"
-                      variant="primary"
-                      onClick={() => setSimulateScanToken(issuedToken)}
-                    >
-                      现场填报
-                    </GlassButton>
-                    <GlassButton
-                      size="sm"
-                      variant="secondary"
-                      onClick={() =>
-                        switchPortal('exhibitor', { onsiteExtraToken: issuedToken.token })
-                      }
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      展商端打开
-                    </GlassButton>
-                  </div>
-                )}
-              </GlassCard>
-            ) : (
-              <GlassCard className="text-center py-10 space-y-2">
-                <ShieldAlert className="w-8 h-8 text-slate-400 mx-auto" />
-                <p className="text-sm font-medium text-slate-800">尚未生成加证码</p>
-              </GlassCard>
-            )}
+              </form>
+            </GlassCard>
 
-            <GlassCard className="space-y-3">
-              <h3 className="text-sm font-semibold text-slate-900">近期加证记录</h3>
-              <div className="divide-y divide-slate-900/[0.06] text-xs">
-                {extraTokens.map((t) => (
-                  <div key={t.id} className="py-2.5 flex items-center justify-between gap-2">
-                    <div>
-                      <div className="font-medium text-slate-900 numeric-text">
-                        {t.boothNumber} · {t.token}
-                      </div>
-                      <div className="text-slate-500 mt-0.5">
-                        {t.reason} · {t.operatorName}
-                      </div>
-                    </div>
+            <GlassCard className="lg:col-span-5 min-w-0 flex flex-col justify-center">
+              {issuedToken ? (
+                <div className="text-center space-y-3 py-2">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      {issuedToken.boothNumber} 现场加证二维码
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      {issuedToken.reason} · 已用{' '}
+                      <span className="numeric-text">
+                        {issuedToken.usedCount}/{issuedToken.extraCount}
+                      </span>
+                    </p>
+                  </div>
+                  <div className="flex justify-center">
+                    <GlassQRCode value={issuedToken.token} size={172} label="一次性现场加证二维码" />
+                  </div>
+                  <p className="text-xs font-medium text-[#0071e3] numeric-text">
+                    加证码：{issuedToken.token}
+                  </p>
+                  <div>
                     <StatusIndicator
-                      tone={t.used ? 'neutral' : 'success'}
-                      label={t.used ? '已失效' : `余 ${t.extraCount - t.usedCount}`}
+                      tone={issuedToken.used ? 'danger' : 'success'}
+                      label={issuedToken.used ? '已失效' : '待登记'}
                     />
+                  </div>
+                  {!issuedToken.used && (
+                    <div className="flex items-center justify-center gap-2 pt-2 border-t border-slate-900/[0.06]">
+                      <GlassButton
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setSimulateScanToken(issuedToken)}
+                      >
+                        现场填报
+                      </GlassButton>
+                      <GlassButton
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          switchPortal('exhibitor', { onsiteExtraToken: issuedToken.token })
+                        }
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        展商端打开
+                      </GlassButton>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-12 space-y-2">
+                  <ShieldAlert className="w-8 h-8 text-slate-300 mx-auto" />
+                  <p className="text-sm font-medium text-slate-600">尚未生成加证码</p>
+                </div>
+              )}
+            </GlassCard>
+          </div>
+
+          <GlassCard padding="none" className="overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-900/[0.06] flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-900">近期加证记录</h3>
+              <span className="text-xs text-slate-400 stat-number">共 {extraTokens.length} 条</span>
+            </div>
+            {extraTokens.length === 0 ? (
+              <div className="py-10 text-center text-xs text-slate-400">暂无加证记录</div>
+            ) : (
+              <div className="divide-y divide-slate-900/[0.06]">
+                {extraTokens.map((t) => (
+                  <div
+                    key={t.id}
+                    className="px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs hover:bg-white/55 transition-colors"
+                  >
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+                      <span className="font-semibold text-[#0071e3] numeric-text">
+                        {t.boothNumber}
+                      </span>
+                      <span className="font-medium text-slate-900 numeric-text">{t.token}</span>
+                      <span className="text-slate-600">{t.reason}</span>
+                      <span className="text-slate-400">操作员：{t.operatorName}</span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <StatusIndicator
+                        tone={t.used ? 'neutral' : 'success'}
+                        label={t.used ? '已失效' : `余 ${t.extraCount - t.usedCount}`}
+                      />
+                      {!t.used && (
+                        <GlassActionMenu
+                          label={`操作加证码 ${t.token}`}
+                          items={[
+                            {
+                              label: '现场填报',
+                              onClick: () => setSimulateScanToken(t),
+                            },
+                            {
+                              label: '展商端打开',
+                              icon: <ExternalLink className="w-3.5 h-3.5" />,
+                              onClick: () =>
+                                switchPortal('exhibitor', { onsiteExtraToken: t.token }),
+                            },
+                          ]}
+                        />
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
-            </GlassCard>
-          </div>
+            )}
+          </GlassCard>
         </div>
       )}
 
       {tab === 'categories' && (
-        <div className="space-y-4">
-          <div className="flex justify-end">
+        <GlassCard padding="none" className="overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-900/[0.06] flex items-center justify-between gap-3">
+            <span className="text-sm font-semibold text-slate-900">证件类别</span>
             <GlassButton
+              size="sm"
               variant="primary"
               disabled={isAllScope}
               onClick={() => setCatDialog({ name: '', color: '#0071e3', enabled: true })}
@@ -852,37 +898,42 @@ export function CertificatesPage() {
               新增类别
             </GlassButton>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {categories.map((cat) => (
-              <GlassCard key={cat.id} className="flex items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <GlassBadge label={cat.name} color={cat.color} />
-                  <div>
+          {categories.length === 0 ? (
+            <div className="py-10 text-center text-xs text-slate-400">暂无证件类别</div>
+          ) : (
+            <div className="divide-y divide-slate-900/[0.06]">
+              {categories.map((cat) => (
+                <div
+                  key={cat.id}
+                  className="px-4 py-3 flex items-center justify-between gap-4 hover:bg-white/55 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <GlassBadge label={cat.name} color={cat.color} />
                     <StatusIndicator
                       tone={cat.enabled ? 'success' : 'neutral'}
                       label={cat.enabled ? '已启用' : '已停用'}
                     />
                   </div>
+                  <GlassButton
+                    size="sm"
+                    variant="ghost"
+                    disabled={isAllScope}
+                    onClick={() =>
+                      setCatDialog({
+                        id: cat.id,
+                        name: cat.name,
+                        color: cat.color,
+                        enabled: cat.enabled,
+                      })
+                    }
+                  >
+                    编辑
+                  </GlassButton>
                 </div>
-                <GlassButton
-                  size="sm"
-                  variant="secondary"
-                  disabled={isAllScope}
-                  onClick={() =>
-                    setCatDialog({
-                      id: cat.id,
-                      name: cat.name,
-                      color: cat.color,
-                      enabled: cat.enabled,
-                    })
-                  }
-                >
-                  编辑
-                </GlassButton>
-              </GlassCard>
-            ))}
-          </div>
-        </div>
+              ))}
+            </div>
+          )}
+        </GlassCard>
       )}
 
       <GlassDialog

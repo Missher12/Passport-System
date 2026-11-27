@@ -312,7 +312,6 @@ export function SmartCaptchaModal({
     <GlassDialog
       open={open && Boolean(challenge)}
       title="人机安全校验"
-      subtitle={challenge?.isMockDemo ? '演示模式模拟校验' : undefined}
       onClose={onClose}
       maxWidthClass="max-w-md"
     >

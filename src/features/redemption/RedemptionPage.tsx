@@ -22,6 +22,7 @@ import {
   PermissionDeniedState,
   StatusIndicator,
 } from '../../components/glass/GlassPrimitives';
+import { GlassDialog } from '../../components/glass/GlassOverlay';
 import { GlassTable, type GlassTableColumn } from '../../components/glass/GlassTable';
 import { GlassScanner } from '../../components/qr/GlassScanner';
 import { getApiClient } from '../../services/api';
@@ -57,6 +58,7 @@ export function RedemptionPage() {
     settings,
     realtimeVersion,
     canAccessModule,
+    navigateAdmin,
     pushToast,
     refreshCore,
   } = useApp();
@@ -72,6 +74,7 @@ export function RedemptionPage() {
   );
 
   const [tab, setTab] = useState<'scanner' | 'records'>('scanner');
+  const [detailRecord, setDetailRecord] = useState<RedemptionRecord | null>(null);
   const [mode, setMode] = useState<RedemptionMode>(
     canUseFastMode && user?.redemptionMode === 'fast' ? 'fast' : 'normal',
   );
@@ -308,9 +311,14 @@ export function RedemptionPage() {
       },
     },
     {
-      key: 'msg',
-      header: '说明',
-      render: (r) => <span className="text-xs text-slate-600">{r.message}</span>,
+      key: 'actions',
+      header: '详情',
+      align: 'right',
+      render: (r) => (
+        <GlassButton size="sm" variant="ghost" onClick={() => setDetailRecord(r)}>
+          详情
+        </GlassButton>
+      ),
     },
   ];
 
@@ -318,7 +326,9 @@ export function RedemptionPage() {
 
   return (
     <PageContainer className="space-y-5">
-      {isAllScope && <AllActivityReadonlyNotice />}
+      {isAllScope && (
+        <AllActivityReadonlyNotice onSelectActivity={() => navigateAdmin('activities')} />
+      )}
 
       <GlassToolbar>
         <GlassTabs
@@ -515,7 +525,7 @@ export function RedemptionPage() {
                 </div>
 
                 {lastResult.holderName && (
-                  <div className="glass-surface-subtle p-3.5 flex items-center gap-3.5">
+                  <div className="pt-3.5 border-t border-slate-900/[0.06] flex items-center gap-3.5">
                     <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-200 shrink-0">
                       {lastResult.avatarUrl && (
                         <img
@@ -562,6 +572,77 @@ export function RedemptionPage() {
           searchPlaceholder="搜索凭证编号、持有人或操作员..."
         />
       )}
+
+      <GlassDialog
+        open={Boolean(detailRecord)}
+        title="核销记录详情"
+        onClose={() => setDetailRecord(null)}
+        maxWidthClass="max-w-md"
+      >
+        {detailRecord && (
+          <div className="space-y-4 text-xs">
+            <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-900/[0.06]">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">
+                  {detailRecord.holderName}
+                </div>
+                <div className="text-[#0071e3] font-semibold order-number mt-0.5">
+                  {detailRecord.displayCode}
+                </div>
+              </div>
+              <StatusIndicator
+                tone={OUTCOME_LABELS[detailRecord.outcome].tone}
+                label={OUTCOME_LABELS[detailRecord.outcome].label}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="text-slate-400">业务类型</div>
+                <div className="text-slate-800 font-medium mt-0.5">
+                  {detailRecord.credentialKind === 'certificate' ? '工作证件核验' : '赠票入场核销'}
+                </div>
+              </div>
+              <div>
+                <div className="text-slate-400">类别 / 批次</div>
+                <div className="text-slate-800 font-medium mt-0.5">
+                  {detailRecord.categoryOrBatch}
+                </div>
+              </div>
+              <div>
+                <div className="text-slate-400">核销时间</div>
+                <div className="text-slate-800 date-number mt-0.5">
+                  {formatDateTimeDisplay(detailRecord.createdAt)}
+                </div>
+              </div>
+              <div>
+                <div className="text-slate-400">核销模式 / 操作员</div>
+                <div className="text-slate-800 mt-0.5">
+                  {detailRecord.mode === 'fast' ? '快速模式' : '普通模式'} ·{' '}
+                  {detailRecord.operatorName}
+                </div>
+              </div>
+              {detailRecord.deviceLabel && (
+                <div>
+                  <div className="text-slate-400">终端设备</div>
+                  <div className="text-slate-800 mt-0.5">{detailRecord.deviceLabel}</div>
+                </div>
+              )}
+              <div>
+                <div className="text-slate-400">所属活动</div>
+                <div className="text-slate-800 mt-0.5">
+                  {activityById[detailRecord.activityId]?.name ?? detailRecord.activityId}
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-900/[0.06]">
+              <div className="text-slate-400">结果说明</div>
+              <p className="text-slate-800 mt-1 leading-relaxed">{detailRecord.message}</p>
+            </div>
+          </div>
+        )}
+      </GlassDialog>
     </PageContainer>
   );
 }
